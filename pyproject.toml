@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "deputy"
+version = "0.1.0"
+description = "Your repo's CI deputy — PR checks, release tagging, and gitops image bumps as testable Python, not logic buried in Actions YAML."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # semantic-release is invoked as a subprocess by the version/release
+    # helpers, so installing deputy puts it on PATH for the workflows.
+    "python-semantic-release==8.5.1",
+    # comment-preserving YAML edits for the gitops-update command.
+    "ruamel.yaml>=0.17",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+deputy = "deputy.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/deputy"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+# RUF001: the ℹ️/✅/❌ glyphs in the PR-comment strings are intentional.
+ignore = ["E501", "RUF001"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
