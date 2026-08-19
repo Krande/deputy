@@ -22,7 +22,7 @@ pip install "deputy @ git+https://github.com/Krande/deputy.git@v0.2.0"
 Declarative (targets from `deputy.toml`, only the tag changes per run):
 
 ```sh
-deputy gitops-update --target asa-viewer-beta --tag sha-abc-42   # one target
+deputy gitops-update --target web-app-beta --tag sha-abc-42   # one target
 deputy gitops-update --all --tag sha-abc-42                       # every target
 ```
 
@@ -51,13 +51,13 @@ flags always win. Found at `./deputy.toml` (override with `--config` /
 
 ```toml
 [images]                                    # optional: name -> ref, keeps targets DRY
-viewer = "ablacr.azurecr.io/asa-adapy-viewer-capacity"
+app = "registry.example.com/web-app"
 
 [[gitops]]                                  # repeatable rollout targets
-name       = "asa-viewer-beta"
-image      = "viewer"                       # an [images] key, or a full ref inline
+name       = "web-app-beta"
+image      = "app"  # an [images] key, or a full ref inline
 repo_dir   = "gitops"
-file       = "cluster_test/asa-viewer/asa-viewer-beta.yaml"
+file       = "clusters/prod/web-app.yaml"
 kind       = "Deployment"
 image_path = "spec.template.spec.containers.0.image"
 message    = "chore({name}): deploy {tag}"  # {name}/{tag}/{image}/{kind} templated

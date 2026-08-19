@@ -20,12 +20,12 @@ from deputy.config import (
 
 TOML = """\
 [images]
-viewer = "ablacr.azurecr.io/asa-adapy-viewer-capacity"
+app = "registry.example.com/web-app"
 
 [[gitops]]
-name = "asa-viewer-beta"
-image = "viewer"
-file = "cluster_test/asa-viewer/asa-viewer-beta.yaml"
+name = "web-app-beta"
+image = "app"
+file = "clusters/prod/web-app.yaml"
 kind = "Deployment"
 image_path = "spec.template.spec.containers.0.image"
 message = "chore({name}): deploy {tag}"
@@ -92,7 +92,7 @@ def test_render_release_config_defaults_only():
 
 def test_resolve_image_ref_maps_or_passes_through(tmp_path):
     cfg = load_config(_write(tmp_path))
-    assert resolve_image_ref(cfg, "viewer") == "ablacr.azurecr.io/asa-adapy-viewer-capacity"
+    assert resolve_image_ref(cfg, "app") == "registry.example.com/web-app"
     assert resolve_image_ref(cfg, "ghcr.io/o/a") == "ghcr.io/o/a"  # not a key -> literal
 
 

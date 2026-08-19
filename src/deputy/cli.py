@@ -8,7 +8,7 @@ Usage (in a workflow, after installing deputy):
 
     deputy pr-review
     deputy tag-on-merge
-    deputy gitops-update --target asa-viewer-beta --tag sha-abc-42   # from deputy.toml
+    deputy gitops-update --target web-app-beta --tag sha-abc-42   # from deputy.toml
     deputy gitops-update --all --tag sha-abc-42                       # every target
     deputy gitops-update --image ghcr.io/o/a:1.2.3 \\                  # ad-hoc, no toml
         --file deploy.yaml --kind Deployment \\
