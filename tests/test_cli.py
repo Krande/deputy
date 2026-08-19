@@ -8,13 +8,13 @@ from deputy import cli
 
 TOML = """\
 [images]
-viewer = "ablacr.azurecr.io/asa-adapy-viewer-capacity"
+app = "registry.example.com/web-app"
 
 [[gitops]]
 name = "beta"
-image = "viewer"
+image = "app"
 repo_dir = "gitops"
-file = "cluster_test/asa-viewer/asa-viewer-beta.yaml"
+file = "clusters/prod/web-app.yaml"
 kind = "Deployment"
 image_path = "spec.template.spec.containers.0.image"
 message = "chore({name}): deploy {tag}"
@@ -51,8 +51,8 @@ def test_target_composes_image_and_templates_message(captured, cfg_file):
     rc = cli.main(["gitops-update", "--config", cfg_file, "--target", "beta", "--tag", "sha-1"])
     assert rc == 0
     (call,) = captured
-    assert call["image"] == "ablacr.azurecr.io/asa-adapy-viewer-capacity:sha-1"
-    assert call["file"] == "cluster_test/asa-viewer/asa-viewer-beta.yaml"
+    assert call["image"] == "registry.example.com/web-app:sha-1"
+    assert call["file"] == "clusters/prod/web-app.yaml"
     assert call["kind"] == "Deployment"
     assert call["repo_dir"] == "gitops"
     assert call["message"] == "chore(beta): deploy sha-1"
@@ -62,7 +62,7 @@ def test_all_bumps_every_target(captured, cfg_file):
     cli.main(["gitops-update", "--config", cfg_file, "--all", "--tag", "sha-9"])
     names = {c["image"] for c in captured}
     assert names == {
-        "ablacr.azurecr.io/asa-adapy-viewer-capacity:sha-9",
+        "registry.example.com/web-app:sha-9",
         "ghcr.io/o/worker:sha-9",
     }
 
