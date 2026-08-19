@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "deputy"
-version = "0.1.0"
+version = "0.2.0"
 description = "Your repo's CI deputy — PR checks, release tagging, and gitops image bumps as testable Python, not logic buried in Actions YAML."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -14,6 +14,8 @@ dependencies = [
     "python-semantic-release==8.5.1",
     # comment-preserving YAML edits for the gitops-update command.
     "ruamel.yaml>=0.17",
+    # write the rendered semantic-release config (tomllib reads, tomli-w writes).
+    "tomli-w>=1.0",
 ]
 
 [project.optional-dependencies]

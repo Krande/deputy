@@ -18,4 +18,4 @@ them together and takes every side-effecting dependency as an argument so the
 whole thing runs under pytest with fakes — no GitHub, no live Actions runner.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
