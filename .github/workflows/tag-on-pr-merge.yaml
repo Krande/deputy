@@ -7,9 +7,16 @@ name: Create Tag on PR Merge
 # [release] table in deputy.toml (which keeps pyproject's version and
 # src/deputy/__init__.py's __version__ in lockstep).
 #
-# The tag is pushed over the default GITHUB_TOKEN (contents: write). Unlike a
-# consumer repo, deputy has NO tag-triggered workflow, so a token-pushed tag is
-# fine here — no SOURCE_KEY deploy key needed.
+# CRITICAL — the release commit + tag are pushed over SSH with the SOURCE_KEY
+# deploy key, NOT the default GITHUB_TOKEN. semantic-release pushes a version-bump
+# commit to main, and GITHUB_TOKEN cannot push to a protected branch (GH006:
+# "Changes must be made through a pull request"); a deploy key can — as long as
+# branch protection does NOT enable "Do not allow bypassing the above settings".
+# Wired via remote.ignore_token_for_push = true: semantic-release pushes over the
+# origin remote the checkout points at (SSH + SOURCE_KEY) and uses GH_TOKEN only
+# for the GitHub Release API call.
+#
+# Requires: secrets.SOURCE_KEY — a deploy key with WRITE access to this repo.
 
 on:
   pull_request_target:
@@ -30,11 +37,12 @@ jobs:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout main (full history so semantic-release can compute the bump)
+      - name: Checkout main (full history; deploy-key auth so the release push bypasses branch protection)
         uses: actions/checkout@v4
         with:
           ref: ${{ github.ref_name }}   # base branch (main) — the merge is already in
           fetch-depth: 0
+          ssh-key: ${{ secrets.SOURCE_KEY }}
 
       - uses: actions/setup-python@v5
         with:

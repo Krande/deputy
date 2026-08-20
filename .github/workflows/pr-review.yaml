@@ -44,3 +44,4 @@ jobs:
         run: deputy pr-review
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HAS_SOURCE_KEY: ${{ secrets.SOURCE_KEY != '' }}
