@@ -1,0 +1,16 @@
+# deputy's own CI config — deputy dogfoods itself. The pr-review /
+# tag-on-pr-merge workflows install this package from the checkout and call it,
+# so any regression in deputy's CI logic surfaces on deputy's own PRs first.
+#
+# deputy ships the full semantic-release defaults itself (angular parser, tag
+# "v{version}", main branch, push over origin, upload to the VCS release), so
+# only the repo-specific bits are set here.
+
+[pr_review]
+marker = "<!-- DEPUTY_PR_BOT -->"
+
+[release]
+# deputy keeps its version in two places, kept in lockstep: the packaging source
+# (pyproject) and the importable __version__. semantic-release bumps both.
+version_toml = ["pyproject.toml:project.version"]
+version_variables = ["src/deputy/__init__.py:__version__"]
