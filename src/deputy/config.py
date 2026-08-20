@@ -107,6 +107,20 @@ def find_target(cfg: dict, name: str) -> dict:
     raise KeyError(f"no [[gitops]] target named {name!r} in deputy.toml")
 
 
+# ── release-watch targets ─────────────────────────────────────────────────────
+
+
+def release_watch_targets(cfg: dict) -> list[dict]:
+    return list(cfg.get("release_watch", []))
+
+
+def find_release_watch_target(cfg: dict, name: str) -> dict:
+    for t in release_watch_targets(cfg):
+        if t.get("name") == name:
+            return t
+    raise KeyError(f"no [[release_watch]] target named {name!r} in deputy.toml")
+
+
 def resolve_image_ref(cfg: dict, image: str) -> str:
     """Resolve a target's ``image`` field: a key in the ``[images]`` map, or a
     literal ref if it isn't mapped."""

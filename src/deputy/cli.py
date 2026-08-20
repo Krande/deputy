@@ -13,9 +13,12 @@ Usage (in a workflow, after installing deputy):
     deputy gitops-update --image ghcr.io/o/a:1.2.3 \\                  # ad-hoc, no toml
         --file deploy.yaml --kind Deployment \\
         --image-path spec.template.spec.containers.0.image
+    deputy release-watch --all                    # open/update dep-bump PRs (from deputy.toml)
+    deputy release-watch --target some-lib --dry-run   # compute + print, open nothing
 
 Env used:
     GITHUB_TOKEN        REST auth for comments/labels (pr-review)
+    GH_TOKEN            REST auth for release-watch (upstream lookup + bump PRs)
     GITHUB_REPOSITORY   "owner/repo" (provided by Actions)
     GITHUB_EVENT_PATH   event payload JSON (provided by Actions)
     HAS_SOURCE_KEY      "true"/"false" — informational SOURCE_KEY presence (pr-review)
@@ -36,13 +39,15 @@ from .comment import MARKER
 from .config import (
     compose_image,
     fill_template,
+    find_release_watch_target,
     find_target,
     gitops_targets,
     load_config,
+    release_watch_targets,
     resolve_image_ref,
     write_release_config,
 )
-from .flows import gitops_update, pr_review, tag_on_merge
+from .flows import gitops_update, pr_review, release_watch, tag_on_merge
 from .github import RestGitHubClient
 
 
@@ -113,6 +118,35 @@ def cmd_gitops_update(args: argparse.Namespace) -> int:
     return _bump_one(args, cfg, target=None)
 
 
+def cmd_release_watch(args: argparse.Namespace) -> int:
+    if args.all and args.target:
+        _fail("use either --target or --all, not both")
+
+    cfg = load_config(args.config)
+    if args.all:
+        targets = release_watch_targets(cfg)
+        if not targets:
+            _fail("--all given but deputy.toml declares no [[release_watch]] targets")
+    elif args.target:
+        targets = [find_release_watch_target(cfg, name) for name in args.target]
+    else:
+        _fail("release-watch needs --all or --target")
+
+    # The upstream release lookup is read-only but still goes through the client;
+    # dry-run just skips the write/commit/PR side. GITHUB_REPOSITORY is only used
+    # when actually opening a PR, so it may be absent for a local dry-run.
+    consumer_repo = os.environ.get("GITHUB_REPOSITORY", "")
+    client = RestGitHubClient(os.environ["GH_TOKEN"], consumer_repo)
+
+    return release_watch(
+        targets,
+        client,
+        repo_dir=args.repo_dir or ".",
+        base=args.base,
+        dry_run=args.dry_run,
+    )
+
+
 def _bump_one(args: argparse.Namespace, cfg: dict, target: dict | None) -> int:
     """Resolve one target's fields (CLI flag > deputy.toml > default) and bump it."""
     t = target or {}
@@ -173,6 +207,26 @@ def main(argv: list[str] | None = None) -> int:
     )
     g.add_argument("--no-push", action="store_true", help="commit but do not push")
 
+    rw = sub.add_parser(
+        "release-watch",
+        help="open/update PRs bumping pinned deps to watched upstreams' latest releases",
+    )
+    _add_config_arg(rw)
+    rw.add_argument(
+        "--target",
+        action="append",
+        default=[],
+        help="deputy.toml [[release_watch]] name (repeatable)",
+    )
+    rw.add_argument("--all", action="store_true", help="check every [[release_watch]] target")
+    rw.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="compute and print bumps without writing, committing, or opening PRs",
+    )
+    rw.add_argument("--base", default="main", help="base branch for the bump PRs (default: main)")
+    rw.add_argument("--repo-dir", default=None, help="path to the checked-out consumer repo")
+
     args = parser.parse_args(argv)
 
     if args.command == "pr-review":
@@ -181,6 +235,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_tag_on_merge(args)
     if args.command == "gitops-update":
         return cmd_gitops_update(args)
+    if args.command == "release-watch":
+        return cmd_release_watch(args)
     return 2
 
 

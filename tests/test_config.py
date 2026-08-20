@@ -11,9 +11,11 @@ from deputy.config import (
     compose_image,
     deep_merge,
     fill_template,
+    find_release_watch_target,
     find_target,
     gitops_targets,
     load_config,
+    release_watch_targets,
     render_release_config,
     resolve_image_ref,
 )
@@ -43,6 +45,18 @@ marker = "<!-- X -->"
 [release]
 tag_format = "release-{version}"
 version_toml = ["action_config.toml:tool.action.version"]
+
+[[release_watch]]
+name = "some-lib"
+repo = "owner/some-lib"
+file = "requirements.txt"
+pattern = 'some-lib==([0-9.]+)'
+
+[[release_watch]]
+name = "my-service"
+repo = "owner/my-service"
+file = "deps.txt"
+pattern = 'my-service@v([0-9.]+)'
 """
 
 
@@ -114,3 +128,21 @@ def test_find_target_and_missing(tmp_path):
 
 def test_gitops_targets_empty_config():
     assert gitops_targets({}) == []
+
+
+def test_release_watch_targets_read(tmp_path):
+    cfg = load_config(_write(tmp_path))
+    targets = release_watch_targets(cfg)
+    assert [t["name"] for t in targets] == ["some-lib", "my-service"]
+    assert targets[0]["repo"] == "owner/some-lib"
+
+
+def test_release_watch_targets_empty_config():
+    assert release_watch_targets({}) == []
+
+
+def test_find_release_watch_target_and_missing(tmp_path):
+    cfg = load_config(_write(tmp_path))
+    assert find_release_watch_target(cfg, "my-service")["file"] == "deps.txt"
+    with pytest.raises(KeyError):
+        find_release_watch_target(cfg, "nope")

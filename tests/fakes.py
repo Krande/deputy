@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
-from deputy.github import Comment
+from deputy.github import Comment, PullRequest, Release
 
 
 class FakeGitHubClient:
-    """Records comment/label calls in memory; satisfies the GitHubClient protocol."""
+    """Records comment/label/PR calls in memory; satisfies the GitHubClient protocol."""
 
     def __init__(self) -> None:
         self.comments: list[Comment] = []
         self.ensured_labels: list[tuple[str, str]] = []
         self.added_labels: list[str] = []
         self._next_id = 0
+        # release-watch fixtures: upstream repo -> latest release tag / tag list,
+        # and the PRs this client has opened on the consumer repo.
+        self.releases: dict[str, str] = {}
+        self.tags: dict[str, list[str]] = {}
+        self.pulls: list[PullRequest] = []
+        self._next_pr = 100
 
     def list_comments(self, issue: int) -> list[Comment]:
         return list(self.comments)
@@ -35,6 +41,33 @@ class FakeGitHubClient:
 
     def add_labels(self, issue: int, labels: list[str]) -> None:
         self.added_labels.extend(labels)
+
+    # ── release-watch surface ────────────────────────────────────────────────
+    def latest_release(self, repo: str) -> Release | None:
+        tag = self.releases.get(repo)
+        return Release(tag) if tag else None
+
+    def list_tags(self, repo: str) -> list[str]:
+        return list(self.tags.get(repo, []))
+
+    def find_open_pr(self, head: str) -> PullRequest | None:
+        for pr in self.pulls:
+            if pr.head == head:
+                return pr
+        return None
+
+    def create_pull_request(self, *, head: str, base: str, title: str, body: str) -> PullRequest:
+        self._next_pr += 1
+        pr = PullRequest(self._next_pr, head, title, body)
+        self.pulls.append(pr)
+        return pr
+
+    def update_pull_request(self, number: int, *, title: str, body: str) -> None:
+        for i, pr in enumerate(self.pulls):
+            if pr.number == number:
+                self.pulls[i] = PullRequest(number, pr.head, title, body)
+                return
+        raise KeyError(number)
 
 
 def pr_event(

@@ -39,3 +39,31 @@ def commit_and_push(
     runner(["git", "-C", cwd, "commit", "-m", message])
     if push:
         runner(["git", "-C", cwd, "push"])
+
+
+def commit_to_branch(
+    cwd: str,
+    branch: str,
+    paths: Sequence[str],
+    message: str,
+    *,
+    push: bool = True,
+    runner: Runner = subprocess.run,
+) -> None:
+    """Create/reset ``branch``, stage ``paths``, commit, and (optionally) push it.
+
+    Used by the release-watch flow to land a dependency bump on a dedicated,
+    per-target branch (one open PR per target). The branch is recreated from the
+    current checkout each run (``checkout -B``) and pushed with
+    ``--force-with-lease`` so a re-run that finds a still-newer upstream release
+    updates the same throwaway bump branch in place rather than piling commits or
+    failing on a non-fast-forward. Push auth comes from the workflow checkout,
+    the same way the other flows rely on it.
+    """
+    runner(["git", "-C", cwd, "config", "user.email", "deputy-bot@users.noreply.github.com"])
+    runner(["git", "-C", cwd, "config", "user.name", "deputy"])
+    runner(["git", "-C", cwd, "checkout", "-B", branch])
+    runner(["git", "-C", cwd, "add", *paths])
+    runner(["git", "-C", cwd, "commit", "-m", message])
+    if push:
+        runner(["git", "-C", cwd, "push", "--force-with-lease", "-u", "origin", branch])
