@@ -31,6 +31,7 @@ from .release_watch import (
     render_pr_body,
     replace_pinned,
 )
+from .sshkey import key_basename, keygen_argv, resolve_email, unique_path
 from .version import run_release, version_line_for
 
 
@@ -273,3 +274,45 @@ def _watch_one(
     if labels:
         client.add_labels(number, labels)
     return 0
+
+
+def create_sshkey(
+    *,
+    cli_email: str | None,
+    key_dir: pathlib.Path,
+    state_path: pathlib.Path,
+    print_private: bool,
+    load_email: Callable[[pathlib.Path], str | None],
+    save_email: Callable[[pathlib.Path, str], None],
+    exists: Callable[[pathlib.Path], bool],
+    make_dir: Callable[[pathlib.Path], None],
+    runner: Callable[[list[str]], object],
+    read_text: Callable[[pathlib.Path], str],
+) -> dict:
+    """Generate a passphrase-less ed25519 key, remembering the email for next time.
+
+    Resolves the email (``cli_email`` wins, else the remembered one), picks a
+    unique filename under ``key_dir``, runs ssh-keygen, and persists the email.
+    Returns the email (and whether it came from the flag or the store), the
+    private/public key paths, and the public key text; the private key text is
+    included only when ``print_private`` is set. Every side effect is injected.
+    """
+    stored = load_email(state_path)
+    email = resolve_email(cli_email, stored)
+    priv = unique_path(key_dir, key_basename(email), exists)
+    pub = pathlib.Path(str(priv) + ".pub")
+
+    make_dir(priv.parent)
+    runner(keygen_argv(priv, email))
+    save_email(state_path, email)
+
+    result = {
+        "email": email,
+        "email_source": "flag" if cli_email else "remembered",
+        "private_key_path": str(priv),
+        "public_key_path": str(pub),
+        "public_key": read_text(pub).strip(),
+    }
+    if print_private:
+        result["private_key"] = read_text(priv)
+    return result

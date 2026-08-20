@@ -17,6 +17,22 @@ pip install "deputy @ git+https://github.com/Krande/deputy.git@v0.3.0"
 | `deputy tag-on-merge` | On a merged PR, run [python-semantic-release](https://python-semantic-release.readthedocs.io/) per the release label to bump the version, tag `vX.Y.Z`, push it, and cut a GitHub Release. |
 | `deputy gitops-update` | Bump a container image reference in a gitops YAML file (comment-preserving, matching a k8s `kind`) and commit + push. |
 | `deputy release-watch` | On a schedule, check watched upstream repos for a newer release/tag than the version pinned in this repo, and open (or update) a PR bumping the pin. |
+| `deputy sshkey` | Generate a passphrase-less ed25519 SSH key (e.g. a CI deploy key), remembering the email so it auto-fills next time, into a unique filename. `--print` also dumps the private key for pasting into a secret. |
+
+### sshkey
+
+Create a deploy key without memorising `ssh-keygen` flags. The email is
+remembered (in `~/.config/deputy/sshkey.json`) and reused when you omit `--email`,
+and the filename is made unique so repeat runs never clobber an earlier key.
+
+```sh
+deputy sshkey --email dev@example.com          # writes ~/.ssh/deputy_ed25519_dev_at_example_com[.pub]
+deputy sshkey                                   # reuses the remembered email
+deputy sshkey --out ./keys --print              # custom dir; also prints the private key to paste into a CI secret
+```
+
+The **public** key is printed to register as a repo Deploy key; add `--print` to
+also print the **private** key (the value for the consumer's Actions secret).
 
 ### gitops-update
 
