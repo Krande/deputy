@@ -39,3 +39,24 @@ ignore = ["E501", "RUF001"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# ── pixi-build: lets `pixi global install deputy --git <url> --tag vX.Y.Z`
+# build + install deputy as a single command (no uv/pipx needed). deputy's three
+# runtime deps are all on conda-forge, so they resolve as conda run-deps here.
+# (preview feature — see https://pixi.sh/latest/build/)
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["win-64", "linux-64", "osx-64", "osx-arm64"]
+preview = ["pixi-build"]
+
+[tool.pixi.package.build]
+backend = { name = "pixi-build-python", version = "*" }
+
+[tool.pixi.package.host-dependencies]
+hatchling = "*"
+
+[tool.pixi.package.run-dependencies]
+python = ">=3.12"
+python-semantic-release = "==8.5.1"
+"ruamel.yaml" = ">=0.17"
+tomli-w = ">=1.0"
