@@ -9,6 +9,34 @@ instead of by pushing commits and reading Actions logs.
 pip install "deputy @ git+https://github.com/Krande/deputy.git@v0.3.0"
 ```
 
+### Install it as a global CLI
+
+To call `deputy` from any directory, install it globally with pixi — deputy ships
+a [pixi-build](https://pixi.sh/latest/build/) manifest, so one command builds and
+installs it (its runtime deps come from conda-forge):
+
+```sh
+pixi global install deputy --git https://github.com/Krande/deputy.git --tag v0.3.0
+```
+
+pixi builds deputy from source under its cache dir during that install. If you'd
+rather the build (and cache) live somewhere specific, point `PIXI_CACHE_DIR` there
+first — pixi puts its build workspace under it:
+
+```sh
+export PIXI_CACHE_DIR=/path/to/pixi-cache      # PowerShell: $env:PIXI_CACHE_DIR = "D:\pixi-cache"
+# (RATTLER_CACHE_DIR takes the same value if you want the resolver cache there too)
+```
+
+Prefer a prebuilt install with no from-source build? Install it as a
+[uv](https://docs.astral.sh/uv/) tool instead — uv itself installs via pixi:
+
+```sh
+pixi global install uv
+uv tool install "deputy @ git+https://github.com/Krande/deputy.git@v0.3.0"
+uv tool update-shell          # one-time: add uv's tool dir to PATH, then reopen the shell
+```
+
 ## Commands
 
 | Command | What it does |
@@ -185,6 +213,15 @@ repo needs **no** `action_config.toml` / `[tool.semantic_release]` block. At
 release time deputy renders a config from *its defaults ⊕ your `[release]`
 overrides* and hands that to semantic-release. Override any key under `[release]`
 (e.g. `version_toml`, `tag_format`, `commit_parser_options`).
+
+## Releasing
+
+deputy dogfoods its own CI: `pr-review.yaml` and `tag-on-pr-merge.yaml` install
+this package and run it against deputy's own PRs. To cut a release, merge a PR
+carrying exactly one `release-*` label (`release-patch` / `release-minor` /
+`release-major`); `tag-on-merge` then bumps the version (both `pyproject.toml`
+and `src/deputy/__init__.py`), tags `vX.Y.Z`, and publishes a GitHub Release.
+A `release-skip` PR merges without cutting a tag.
 
 ## Why
 
