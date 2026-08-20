@@ -13,11 +13,24 @@ from collections.abc import Callable
 from .actions_io import parse_pull_request
 from .actions_io import set_output as _set_output
 from .comment import MARKER, render_body
+from .config import fill_template
 from .github import GitHubClient, upsert_sticky_comment
 from .gitops import set_image
-from .gitutils import commit_and_push, seed_title_commit
+from .gitutils import commit_and_push, commit_to_branch, seed_title_commit
 from .labels import DEFAULT_LABEL, LABEL_PALETTE, SILENCE_LABEL, BumpDecision, decide_bump
 from .pr_checks import PrChecks, title_ok
+from .release_watch import (
+    DEFAULT_BRANCH_PREFIX,
+    DEFAULT_LABELS,
+    DEFAULT_PR_TITLE,
+    MARKER_TEMPLATE,
+    find_pinned,
+    is_newer,
+    normalize_version,
+    pick_latest_tag,
+    render_pr_body,
+    replace_pinned,
+)
 from .version import run_release, version_line_for
 
 
@@ -137,4 +150,126 @@ def gitops_update(
         message or f"chore(gitops): set {kind} image to {image}",
         push=push,
     )
+    return 0
+
+
+def latest_upstream_version(client: GitHubClient, repo: str) -> str | None:
+    """Latest upstream version: the newest GitHub Release, else newest semver tag.
+
+    Returns the raw tag string (e.g. ``"v1.2.3"``) or None when the upstream repo
+    has neither a release nor a semver-shaped tag.
+    """
+    release = client.latest_release(repo)
+    if release is not None:
+        return release.tag_name
+    return pick_latest_tag(client.list_tags(repo))
+
+
+def release_watch(
+    targets: list[dict],
+    client: GitHubClient,
+    *,
+    repo_dir: str = ".",
+    base: str = "main",
+    dry_run: bool = False,
+    reader: Callable[[str], str] | None = None,
+    writer: Callable[[str, str], None] | None = None,
+    commit_fn: Callable[..., None] | None = None,
+) -> int:
+    """For each watched target, open/update a PR bumping a pinned dependency.
+
+    Per target: look up the upstream repo's latest release/tag, read the pinned
+    version out of the consumer file, and if upstream is strictly newer, rewrite
+    the pin, commit it to a per-target branch, and open a PR (or update the
+    existing open one — idempotent by head branch). Up-to-date targets are no-ops.
+    With ``dry_run`` the change is computed and printed but nothing is written,
+    committed, or opened. All I/O is injected so this unit-tests without a repo or
+    network. Returns 0 when every target succeeds, 1 if any pattern failed to
+    match (so the workflow step goes red on a stale/misconfigured pattern).
+    """
+    reader = reader or (lambda p: pathlib.Path(p).read_text(encoding="utf-8"))
+    writer = writer or (lambda p, text: pathlib.Path(p).write_text(text, encoding="utf-8"))
+    commit_fn = commit_fn or commit_to_branch
+
+    rc = 0
+    for target in targets:
+        rc |= _watch_one(
+            target,
+            client,
+            repo_dir=repo_dir,
+            base=base,
+            dry_run=dry_run,
+            reader=reader,
+            writer=writer,
+            commit_fn=commit_fn,
+        )
+    return rc
+
+
+def _watch_one(
+    target: dict,
+    client: GitHubClient,
+    *,
+    repo_dir: str,
+    base: str,
+    dry_run: bool,
+    reader: Callable[[str], str],
+    writer: Callable[[str, str], None],
+    commit_fn: Callable[..., None],
+) -> int:
+    name = target["name"]
+    upstream = target["repo"]
+    file = target["file"]
+    pattern = target["pattern"]
+
+    latest = latest_upstream_version(client, upstream)
+    if latest is None:
+        print(f"[{name}] no upstream release or semver tag on {upstream}; skipping")
+        return 0
+
+    full = str(pathlib.PurePosixPath(repo_dir) / file)
+    text = reader(full)
+    current = find_pinned(text, pattern)
+    if current is None:
+        print(f"[{name}] pattern did not match anything in {file}; skipping (check the pattern)")
+        return 1
+
+    new_version = normalize_version(latest)
+    if not is_newer(new_version, current):
+        print(f"[{name}] up to date (pinned {current}, latest {new_version}); nothing to do")
+        return 0
+
+    branch = f"{target.get('branch_prefix', DEFAULT_BRANCH_PREFIX)}/{name}"
+    title = fill_template(target.get("pr_title", DEFAULT_PR_TITLE), name=name, version=new_version)
+    marker = MARKER_TEMPLATE.format(name=name)
+    body = render_pr_body(name, current, new_version, upstream, marker)
+    labels = list(target.get("labels", DEFAULT_LABELS))
+
+    if dry_run:
+        print(f"[{name}] would bump {current} -> {new_version} on {branch} (dry-run)")
+        return 0
+
+    new_text, count = replace_pinned(text, pattern, new_version)
+    writer(full, new_text)
+    commit_fn(
+        repo_dir,
+        branch,
+        [file],
+        f"chore({name}): bump {current} -> {new_version}",
+        push=True,
+    )
+    print(f"[{name}] patched {count} pin(s) in {file}: {current} -> {new_version}")
+
+    existing = client.find_open_pr(branch)
+    if existing is not None:
+        client.update_pull_request(existing.number, title=title, body=body)
+        number = existing.number
+        print(f"[{name}] updated existing PR #{number}")
+    else:
+        pr = client.create_pull_request(head=branch, base=base, title=title, body=body)
+        number = pr.number
+        print(f"[{name}] opened PR #{number}")
+
+    if labels:
+        client.add_labels(number, labels)
     return 0

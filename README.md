@@ -6,7 +6,7 @@ deputy and call `deputy <command>`; the logic runs and is tested **locally**
 instead of by pushing commits and reading Actions logs.
 
 ```sh
-pip install "deputy @ git+https://github.com/Krande/deputy.git@v0.2.0"
+pip install "deputy @ git+https://github.com/Krande/deputy.git@v0.3.0"
 ```
 
 ## Commands
@@ -16,6 +16,7 @@ pip install "deputy @ git+https://github.com/Krande/deputy.git@v0.2.0"
 | `deputy pr-review` | Check a PR (conventional title + exactly one `release-*` label), compute the next version for information, post/update one sticky comment, set the `review_ok` output, exit non-zero if a check fails. |
 | `deputy tag-on-merge` | On a merged PR, run [python-semantic-release](https://python-semantic-release.readthedocs.io/) per the release label to bump the version, tag `vX.Y.Z`, push it, and cut a GitHub Release. |
 | `deputy gitops-update` | Bump a container image reference in a gitops YAML file (comment-preserving, matching a k8s `kind`) and commit + push. |
+| `deputy release-watch` | On a schedule, check watched upstream repos for a newer release/tag than the version pinned in this repo, and open (or update) a PR bumping the pin. |
 
 ### gitops-update
 
@@ -42,6 +43,71 @@ repo is expected to be already checked out with push auth in place (the
 workflow's checkout step handles the deploy key), the same way `tag-on-merge`
 relies on the checkout's `SOURCE_KEY`.
 
+### release-watch
+
+Keep a dependency pinned to an upstream repo's latest release, automatically. On
+a schedule, deputy checks each watched target's upstream for a newer
+release/tag than the version currently pinned in your repo, and opens a PR that
+bumps the pin. Targets live in `deputy.toml` (see below).
+
+```sh
+deputy release-watch --all                      # check every [[release_watch]] target
+deputy release-watch --target some-lib          # just one (repeatable)
+deputy release-watch --all --dry-run            # compute + print, open nothing
+deputy release-watch --all --base develop       # PRs target a non-default base branch
+```
+
+Per target deputy:
+
+1. Looks up the upstream repo's **latest GitHub Release**, falling back to its
+   highest **semver tag** when no release is published.
+2. Reads the currently-pinned version out of your file via a **regex with one
+   capture group** (group 1 is the version).
+3. If upstream is strictly newer (semver compare, leading `v` and pre-releases
+   handled), rewrites **only** the captured span, commits it to a per-target
+   branch (`<branch_prefix>/<name>`), pushes, and opens a PR.
+
+It is **idempotent**: the PR is keyed to the per-target head branch, so a later
+run that finds a still-newer release updates the same PR instead of opening a
+duplicate. Up-to-date targets are no-ops. A pattern that matches nothing fails
+loud (non-zero exit) rather than silently doing nothing.
+
+Auth is the `GH_TOKEN` env var; `GITHUB_REPOSITORY` (`owner/repo`, provided by
+Actions) names the repo the PRs are opened on. `--dry-run` needs neither a repo
+nor push access.
+
+#### Scheduled workflow (consumer side)
+
+A repo wires it up with a cron workflow that checks out, installs deputy, and
+calls `release-watch`. Generic example:
+
+```yaml
+# .github/workflows/release-watch.yml
+name: release-watch
+on:
+  schedule:
+    - cron: "0 6 * * 1"      # every Monday 06:00 UTC
+  workflow_dispatch: {}        # allow manual runs
+
+permissions:
+  contents: write             # push the bump branch
+  pull-requests: write        # open/update the PR
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "deputy @ git+https://github.com/Krande/deputy.git@v0.3.0"
+      - run: deputy release-watch --all
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+```
+
 ## deputy.toml
 
 Keep the static flags in a `deputy.toml` so workflows pass only what changes per
@@ -62,12 +128,38 @@ kind       = "Deployment"
 image_path = "spec.template.spec.containers.0.image"
 message    = "chore({name}): deploy {tag}"  # {name}/{tag}/{image}/{kind} templated
 
+[[release_watch]]                           # repeatable dependency-watch targets
+name          = "some-lib"                  # label used in branch/commit/PR text
+repo          = "owner/some-lib"            # upstream repo to query for the latest release
+file          = "requirements.txt"          # file in THIS repo holding the pin
+pattern       = 'some-lib==([0-9]+\.[0-9]+\.[0-9]+)'  # regex; group 1 = the version to bump
+# optional, with sensible defaults:
+pr_title      = "chore: bump {name} to {version}"     # {name}/{version} templated
+branch_prefix = "deputy/release-watch"      # head branch is "<branch_prefix>/<name>"
+labels        = ["dependencies"]            # labels applied to the PR
+
 [pr_review]
 marker = "<!-- MY_PR_BOT -->"               # keep an existing sticky-comment thread
 
 [release]                                   # semantic-release overrides (see below)
 version_toml = ["pyproject.toml:project.version"]
 ```
+
+### `[[release_watch]]` schema
+
+| Field | Required | Default | Meaning |
+|---|---|---|---|
+| `name` | yes | — | Identifier for the target; used in the branch, commit, PR title, and marker. |
+| `repo` | yes | — | Upstream repo (`owner/name`) queried for the latest release/tag. |
+| `file` | yes | — | Path in **this** repo holding the pinned version. |
+| `pattern` | yes | — | Regex locating the pin; **capture group 1** is the version substring rewritten in place (no group → the whole match is replaced). |
+| `pr_title` | no | `chore: bump {name} to {version}` | PR title; `{name}` / `{version}` templated. |
+| `branch_prefix` | no | `deputy/release-watch` | Head branch is `<branch_prefix>/<name>`. |
+| `labels` | no | `["dependencies"]` | Labels applied to the opened/updated PR. |
+
+The upstream tag is normalised (a leading `v` is stripped) before it is spliced
+into the captured span, so a `v1.2.3` release lands as `1.2.3`. Put any literal
+`v` or quotes **outside** the capture group in your `pattern`.
 
 ## Release config is self-contained
 
@@ -91,17 +183,18 @@ to find. Here it's a one-line unit test
 Pure decision logic with no I/O, plus thin injectable adapters:
 
 ```
-labels.py      release-* label -> bump decision              (pure)
-pr_checks.py   conventional-title + one-label checks         (pure)
-comment.py     render the sticky markdown body               (pure)
-gitops.py      patch a container image in YAML text          (pure)
-config.py      deputy.toml loader, precedence, release defaults (pure)
-version.py     semantic-release wrappers (env-isolated, injectable runner)
-actions_io.py  read the event payload; write GITHUB_OUTPUT   (heredoc-safe)
-github.py      GitHubClient protocol + REST impl + sticky upsert
-gitutils.py    git helpers (injectable runner)
-flows.py       pr_review()/tag_on_merge()/gitops_update() — every side effect is a parameter
-cli.py         wire the real adapters from env/args/deputy.toml; argparse entrypoints
+labels.py        release-* label -> bump decision              (pure)
+pr_checks.py     conventional-title + one-label checks         (pure)
+comment.py       render the sticky markdown body               (pure)
+gitops.py        patch a container image in YAML text          (pure)
+release_watch.py semver compare + pinned-version rewrite       (pure)
+config.py        deputy.toml loader, precedence, release defaults (pure)
+version.py       semantic-release wrappers (env-isolated, injectable runner)
+actions_io.py    read the event payload; write GITHUB_OUTPUT   (heredoc-safe)
+github.py        GitHubClient protocol + REST impl (comments, labels, releases, PRs)
+gitutils.py      git helpers (injectable runner)
+flows.py         pr_review()/tag_on_merge()/gitops_update()/release_watch() — every side effect is a parameter
+cli.py           wire the real adapters from env/args/deputy.toml; argparse entrypoints
 ```
 
 `flows.py` takes the GitHub client, file reader/writer, version calculator, and

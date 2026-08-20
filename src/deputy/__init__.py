@@ -7,8 +7,9 @@ tested locally instead of by pushing commits and reading Actions logs.
 
 Commands: ``pr-review`` (conventional-title + release-label checks, next-version
 preview, one sticky comment), ``tag-on-merge`` (semantic-release version bump +
-tag + GitHub Release), and ``gitops-update`` (bump a container image reference
-in a gitops YAML file and push).
+tag + GitHub Release), ``gitops-update`` (bump a container image reference in a
+gitops YAML file and push), and ``release-watch`` (open/update PRs bumping pinned
+dependencies to watched upstream repos' latest releases).
 
 Design: pure decision logic (:mod:`deputy.labels`, :mod:`deputy.pr_checks`,
 :mod:`deputy.comment`, :mod:`deputy.gitops`) with no I/O, plus thin, injectable
@@ -18,4 +19,4 @@ them together and takes every side-effecting dependency as an argument so the
 whole thing runs under pytest with fakes — no GitHub, no live Actions runner.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
