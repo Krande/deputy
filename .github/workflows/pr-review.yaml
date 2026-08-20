@@ -1,0 +1,46 @@
+name: Review Pull Request
+
+# deputy reviews its OWN pull requests — dogfooding. It installs the package from
+# the checked-out base ref and runs `deputy pr-review`, which checks the PR
+# (conventional title + exactly one release-* label), computes the next version
+# for information, and posts/updates a single sticky comment. If the package's
+# own CI logic regresses, it shows up here first.
+#
+# pull_request_target so the job (and GITHUB_TOKEN) can comment + label even on
+# fork PRs. It checks out the BASE ref only and never runs any PR-head code.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, edited, unlabeled]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-review:
+    name: Check Pull Request
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout base ref (full history for the version calc)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}   # base branch — never the untrusted PR head
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deputy (from this repo — dogfooding)
+        run: pip install .
+
+      - name: Review the PR (checks + sticky comment); fails if a check fails
+        run: deputy pr-review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -32,6 +32,8 @@ from __future__ import annotations
 
 import argparse
 import os
+import pathlib
+import subprocess
 import sys
 
 from .actions_io import read_event
@@ -47,8 +49,9 @@ from .config import (
     resolve_image_ref,
     write_release_config,
 )
-from .flows import gitops_update, pr_review, release_watch, tag_on_merge
+from .flows import create_sshkey, gitops_update, pr_review, release_watch, tag_on_merge
 from .github import RestGitHubClient
+from .sshkey import DEFAULT_KEY_DIR, STATE_PATH, load_stored_email, save_stored_email
 
 
 def _release_config_path(cfg: dict) -> str:
@@ -176,6 +179,32 @@ def _add_config_arg(p: argparse.ArgumentParser) -> None:
     p.add_argument("--config", default=None, help="path to deputy.toml (default: ./deputy.toml)")
 
 
+def cmd_sshkey(args: argparse.Namespace) -> int:
+    key_dir = pathlib.Path(os.path.expanduser(args.out or DEFAULT_KEY_DIR))
+    state_path = pathlib.Path(os.path.expanduser(STATE_PATH))
+    result = create_sshkey(
+        cli_email=args.email,
+        key_dir=key_dir,
+        state_path=state_path,
+        print_private=args.print,
+        load_email=load_stored_email,
+        save_email=save_stored_email,
+        exists=lambda p: p.exists(),
+        make_dir=lambda d: d.mkdir(parents=True, exist_ok=True),
+        runner=lambda cmd: subprocess.run(cmd, check=True),
+        read_text=lambda p: p.read_text(encoding="utf-8"),
+    )
+    print(f"Created ed25519 key for {result['email']} ({result['email_source']} email)")
+    print(f"  private: {result['private_key_path']}")
+    print(f"  public : {result['public_key_path']}")
+    print("\nPublic key — add as a repo Deploy key (Settings -> Deploy keys):")
+    print(result["public_key"])
+    if args.print:
+        print("\nPrivate key — paste into the CI secret; keep it secret:")
+        print(result["private_key"], end="")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="deputy")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -227,6 +256,24 @@ def main(argv: list[str] | None = None) -> int:
     rw.add_argument("--base", default="main", help="base branch for the bump PRs (default: main)")
     rw.add_argument("--repo-dir", default=None, help="path to the checked-out consumer repo")
 
+    sk = sub.add_parser(
+        "sshkey",
+        help="generate an ed25519 SSH key (e.g. a CI deploy key), remembering the email",
+    )
+    sk.add_argument(
+        "--email",
+        default=None,
+        help="comment email for the key; if omitted, the last-used email is reused",
+    )
+    sk.add_argument(
+        "--out", default=None, help=f"directory to write the key into (default: {DEFAULT_KEY_DIR})"
+    )
+    sk.add_argument(
+        "--print",
+        action="store_true",
+        help="also print the PRIVATE key (for pasting into a CI secret)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "pr-review":
@@ -237,6 +284,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_gitops_update(args)
     if args.command == "release-watch":
         return cmd_release_watch(args)
+    if args.command == "sshkey":
+        return cmd_sshkey(args)
     return 2
 
 

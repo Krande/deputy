@@ -1,0 +1,54 @@
+name: Create Tag on PR Merge
+
+# deputy releases ITSELF — dogfooding. On a merged PR it reads the release-*
+# label and, when a release is warranted, runs python-semantic-release to bump
+# the version, create a vX.Y.Z tag, push it, and cut a GitHub Release. The
+# release config comes from deputy's built-in semantic-release defaults plus the
+# [release] table in deputy.toml (which keeps pyproject's version and
+# src/deputy/__init__.py's __version__ in lockstep).
+#
+# The tag is pushed over the default GITHUB_TOKEN (contents: write). Unlike a
+# consumer repo, deputy has NO tag-triggered workflow, so a token-pushed tag is
+# fine here — no SOURCE_KEY deploy key needed.
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: release-${{ github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  tag:
+    name: Tag release
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main (full history so semantic-release can compute the bump)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}   # base branch (main) — the merge is already in
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Configure git identity for the release commit
+        run: |
+          git config user.name "semantic-release"
+          git config user.email "semantic-release@users.noreply.github.com"
+
+      - name: Install deputy (from this repo — dogfooding)
+        run: pip install .
+
+      - name: Tag + release per the PR's release label
+        run: deputy tag-on-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
