@@ -9,6 +9,30 @@ instead of by pushing commits and reading Actions logs.
 pip install "deputy @ git+https://github.com/Krande/deputy.git@v0.3.0"
 ```
 
+### Install it as a global CLI
+
+To call `deputy` from any directory, install it as a global tool with
+[uv](https://docs.astral.sh/uv/) — which itself installs via pixi:
+
+```sh
+pixi global install uv        # uv is on conda-forge; exposes uv + uvx on PATH
+uv tool install "deputy @ git+https://github.com/Krande/deputy.git@v0.3.0"
+uv tool update-shell          # one-time: add uv's tool dir to PATH, then reopen the shell
+```
+
+`pixi global install deputy` won't work directly — pixi's global installer builds
+a conda package from source, and deputy's pip-only dependencies aren't
+conda-resolvable — so route it through `uv tool` as above.
+
+On a locked-down machine where executables under uv's default tool dir
+(`~/.local/bin`) are blocked by policy, point uv's shim at an already-allowed,
+on-`PATH` directory instead — e.g. pixi's own global bin:
+
+```powershell
+$env:UV_TOOL_BIN_DIR = "$env:PIXI_HOME\bin"   # a policy-allowed, on-PATH dir
+uv tool install "deputy @ git+https://github.com/Krande/deputy.git@v0.3.0"
+```
+
 ## Commands
 
 | Command | What it does |
