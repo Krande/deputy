@@ -11,26 +11,30 @@ pip install "deputy @ git+https://github.com/Krande/deputy.git@v0.3.0"
 
 ### Install it as a global CLI
 
-To call `deputy` from any directory, install it as a global tool with
-[uv](https://docs.astral.sh/uv/) — which itself installs via pixi:
+To call `deputy` from any directory, install it globally with pixi — deputy ships
+a [pixi-build](https://pixi.sh/latest/build/) manifest, so one command builds and
+installs it (its runtime deps come from conda-forge):
 
 ```sh
-pixi global install uv        # uv is on conda-forge; exposes uv + uvx on PATH
-uv tool install "deputy @ git+https://github.com/Krande/deputy.git@v0.3.0"
-uv tool update-shell          # one-time: add uv's tool dir to PATH, then reopen the shell
+pixi global install deputy --git https://github.com/Krande/deputy.git --tag v0.3.0
 ```
 
-`pixi global install deputy` won't work directly — pixi's global installer builds
-a conda package from source, and deputy's pip-only dependencies aren't
-conda-resolvable — so route it through `uv tool` as above.
+pixi builds deputy from source under its cache dir during that install. If you'd
+rather the build (and cache) live somewhere specific, point `PIXI_CACHE_DIR` there
+first — pixi puts its build workspace under it:
 
-On a locked-down machine where executables under uv's default tool dir
-(`~/.local/bin`) are blocked by policy, point uv's shim at an already-allowed,
-on-`PATH` directory instead — e.g. pixi's own global bin:
+```sh
+export PIXI_CACHE_DIR=/path/to/pixi-cache      # PowerShell: $env:PIXI_CACHE_DIR = "D:\pixi-cache"
+# (RATTLER_CACHE_DIR takes the same value if you want the resolver cache there too)
+```
 
-```powershell
-$env:UV_TOOL_BIN_DIR = "$env:PIXI_HOME\bin"   # a policy-allowed, on-PATH dir
+Prefer a prebuilt install with no from-source build? Install it as a
+[uv](https://docs.astral.sh/uv/) tool instead — uv itself installs via pixi:
+
+```sh
+pixi global install uv
 uv tool install "deputy @ git+https://github.com/Krande/deputy.git@v0.3.0"
+uv tool update-shell          # one-time: add uv's tool dir to PATH, then reopen the shell
 ```
 
 ## Commands
