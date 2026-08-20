@@ -186,6 +186,15 @@ release time deputy renders a config from *its defaults ⊕ your `[release]`
 overrides* and hands that to semantic-release. Override any key under `[release]`
 (e.g. `version_toml`, `tag_format`, `commit_parser_options`).
 
+## Releasing
+
+deputy dogfoods its own CI: `pr-review.yaml` and `tag-on-pr-merge.yaml` install
+this package and run it against deputy's own PRs. To cut a release, merge a PR
+carrying exactly one `release-*` label (`release-patch` / `release-minor` /
+`release-major`); `tag-on-merge` then bumps the version (both `pyproject.toml`
+and `src/deputy/__init__.py`), tags `vX.Y.Z`, and publishes a GitHub Release.
+A `release-skip` PR merges without cutting a tag.
+
 ## Why
 
 Logic in YAML can't be run, tested, or debugged locally. The bug deputy was born
