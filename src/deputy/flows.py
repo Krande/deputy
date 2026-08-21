@@ -42,12 +42,17 @@ def pr_review(
     has_source_key: bool,
     marker: str = MARKER,
     config_file: str = "pyproject.toml",
+    default_label: str = DEFAULT_LABEL,
     ensure_labels: bool = True,
     version_line_fn: Callable[[BumpDecision], str] | None = None,
     seed_fn: Callable[[str], None] | None = None,
     set_output_fn: Callable[[str, str], None] | None = None,
 ) -> int:
     """Run the PR-review checks, post/refresh the sticky comment, set review_ok.
+
+    ``default_label`` is the release-* label applied when the PR carries none —
+    the repo's configured default (``[pr_review].default_label``), falling back
+    to ``release-skip``.
 
     Returns 0 when the checks pass, 1 when they fail (so the workflow step goes red).
     """
@@ -62,12 +67,13 @@ def pr_review(
         for name, color in LABEL_PALETTE.items():
             client.ensure_label(name, color)
 
-    # Default a missing release-* label to release-skip (and reflect it locally).
+    # Default a missing release-* label to the configured default (and reflect
+    # it locally).
     if not any(label.startswith("release-") for label in labels):
-        client.add_labels(pr.number, [DEFAULT_LABEL])
-        labels.append(DEFAULT_LABEL)
+        client.add_labels(pr.number, [default_label])
+        labels.append(default_label)
 
-    decision = decide_bump(labels)
+    decision = decide_bump(labels, default_label)
     checks = PrChecks(
         title_ok=title_ok(pr.title),
         label_ok=not decision.multiple,
@@ -89,9 +95,13 @@ def tag_on_merge(
     event: dict,
     *,
     config_file: str = "pyproject.toml",
+    default_label: str = DEFAULT_LABEL,
     release_fn: Callable[[str | None], int] | None = None,
 ) -> int:
     """On a merged PR, run semantic-release to tag/release per the release label.
+
+    A PR with no release-* label (pr-review never ran, or the label was removed)
+    falls back to the same configured ``default_label`` the review flow applies.
 
     Returns the release subprocess's return code, or 0 when nothing is released.
     """
@@ -102,7 +112,7 @@ def tag_on_merge(
         print("PR is not merged; nothing to do.")
         return 0
 
-    decision = decide_bump(pr.labels)
+    decision = decide_bump(pr.labels, default_label)
     if not decision.release:
         print(f"No release ({decision.reason}).")
         return 0

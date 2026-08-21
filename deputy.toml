@@ -8,6 +8,11 @@
 
 [pr_review]
 marker = "<!-- DEPUTY_PR_BOT -->"
+# The release-* label applied to a PR that carries none — also what tag-on-merge
+# falls back to. deputy keeps the built-in "release-skip" so releasing stays
+# opt-in here; set "release-auto" to have unlabelled PRs release by default
+# (an explicit release-skip label still skips).
+# default_label = "release-skip"
 
 [release]
 # deputy keeps its version in two places, kept in lockstep: the packaging source

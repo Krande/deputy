@@ -27,6 +27,8 @@ LABEL_PALETTE: dict[str, str] = {
 }
 
 SILENCE_LABEL = "silence-bot"
+# Built-in fallback when a repo configures nothing. Overridable per-repo via
+# deputy.toml's [pr_review].default_label (see config.resolve_default_label).
 DEFAULT_LABEL = "release-skip"
 
 
@@ -47,17 +49,24 @@ class BumpDecision:
         return self.label
 
 
-def decide_bump(labels: list[str]) -> BumpDecision:
+def decide_bump(labels: list[str], default_label: str = DEFAULT_LABEL) -> BumpDecision:
     """Interpret a PR's labels into a release decision.
 
-    Missing release label defaults to ``release-skip`` (matches the auto-default
-    the review flow applies). More than one release-* label is invalid.
+    A missing release label falls back to ``default_label`` — the repo's
+    configured default (``[pr_review].default_label``), which the review flow
+    also applies to the PR — defaulting to ``release-skip``. More than one
+    release-* label is invalid.
+
+    Whether to release is decided by the label's *flag*, not by comparing the
+    label to the default: ``None`` means "do not release", every other flag
+    means "release". A PR explicitly labelled ``release-skip`` therefore never
+    releases, even under a ``release-auto`` default.
     """
     present = tuple(label for label in labels if label in RELEASE_FORCE_FLAG)
     if not present:
-        present = (DEFAULT_LABEL,)
+        present = (default_label,)
     if len(present) > 1:
         return BumpDecision(False, None, present[0], present, True)
     label = present[0]
     flag = RELEASE_FORCE_FLAG[label]
-    return BumpDecision(label != DEFAULT_LABEL, flag, label, present, False)
+    return BumpDecision(flag is not None, flag, label, present, False)

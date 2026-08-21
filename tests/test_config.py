@@ -17,6 +17,7 @@ from deputy.config import (
     load_config,
     release_watch_targets,
     render_release_config,
+    resolve_default_label,
     resolve_image_ref,
 )
 
@@ -146,3 +147,61 @@ def test_find_release_watch_target_and_missing(tmp_path):
     assert find_release_watch_target(cfg, "my-service")["file"] == "deps.txt"
     with pytest.raises(KeyError):
         find_release_watch_target(cfg, "nope")
+
+
+# ── [pr_review].default_label ─────────────────────────────────────────────────
+
+
+def _with_default_label(value: str) -> str:
+    """TOML above, with default_label added to its [pr_review] table."""
+    return TOML.replace("[pr_review]\n", f'[pr_review]\ndefault_label = "{value}"\n')
+
+
+def test_default_label_falls_back_to_release_skip_when_unconfigured(monkeypatch):
+    monkeypatch.delenv("DEPUTY_DEFAULT_LABEL", raising=False)
+    assert resolve_default_label({}) == "release-skip"
+    assert resolve_default_label({"pr_review": {"marker": "<!-- X -->"}}) == "release-skip"
+
+
+def test_default_label_read_from_pr_review_table(tmp_path, monkeypatch):
+    monkeypatch.delenv("DEPUTY_DEFAULT_LABEL", raising=False)
+    cfg = load_config(_write(tmp_path, _with_default_label("release-auto")))
+    assert resolve_default_label(cfg) == "release-auto"
+
+
+def test_default_label_env_beats_toml(tmp_path, monkeypatch):
+    cfg = load_config(_write(tmp_path, _with_default_label("release-auto")))
+    monkeypatch.setenv("DEPUTY_DEFAULT_LABEL", "release-minor")
+    assert resolve_default_label(cfg) == "release-minor"
+
+
+def test_empty_env_counts_as_unset(tmp_path, monkeypatch):
+    cfg = load_config(_write(tmp_path, _with_default_label("release-auto")))
+    monkeypatch.setenv("DEPUTY_DEFAULT_LABEL", "")  # unset Actions expression
+    assert resolve_default_label(cfg) == "release-auto"
+
+
+def test_invalid_default_label_in_toml_raises_with_the_valid_options(tmp_path, monkeypatch):
+    monkeypatch.delenv("DEPUTY_DEFAULT_LABEL", raising=False)
+    cfg = load_config(_write(tmp_path, _with_default_label("release-atuo")))
+    with pytest.raises(ValueError) as exc:
+        resolve_default_label(cfg)
+    msg = str(exc.value)
+    assert "release-atuo" in msg
+    assert "[pr_review].default_label" in msg
+    assert "release-auto" in msg and "release-skip" in msg
+
+
+def test_invalid_default_label_in_env_raises(monkeypatch):
+    monkeypatch.setenv("DEPUTY_DEFAULT_LABEL", "nope")
+    with pytest.raises(ValueError) as exc:
+        resolve_default_label({})
+    assert "DEPUTY_DEFAULT_LABEL" in str(exc.value)
+
+
+def test_default_label_is_not_a_release_table_key():
+    # [release] is deep-merged into the generated semantic-release config, so a
+    # deputy-only key must not live there.
+    assert "default_label" not in RELEASE_DEFAULTS
+    rendered = tomllib.loads(render_release_config({"default_label": "release-auto"}))
+    assert "default_label" in rendered["tool"]["semantic_release"]  # ...it would leak

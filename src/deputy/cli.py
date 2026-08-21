@@ -24,6 +24,7 @@ Env used:
     HAS_SOURCE_KEY      "true"/"false" — informational SOURCE_KEY presence (pr-review)
     DEPUTY_TOML         path to deputy.toml (default: ./deputy.toml)
     DEPUTY_MARKER       override the sticky-comment marker
+    DEPUTY_DEFAULT_LABEL  override [pr_review].default_label (release-skip by default)
     DEPUTY_CONFIG       use an existing semantic-release config file as-is
                         (back-compat; otherwise deputy renders one from [release])
 """
@@ -46,6 +47,7 @@ from .config import (
     gitops_targets,
     load_config,
     release_watch_targets,
+    resolve_default_label,
     resolve_image_ref,
     write_release_config,
 )
@@ -77,12 +79,17 @@ def cmd_pr_review(args: argparse.Namespace) -> int:
         has_source_key=os.environ.get("HAS_SOURCE_KEY") == "true",
         marker=_marker(cfg),
         config_file=_release_config_path(cfg),
+        default_label=resolve_default_label(cfg),
     )
 
 
 def cmd_tag_on_merge(args: argparse.Namespace) -> int:
     cfg = load_config(args.config)
-    return tag_on_merge(read_event(), config_file=_release_config_path(cfg))
+    return tag_on_merge(
+        read_event(),
+        config_file=_release_config_path(cfg),
+        default_label=resolve_default_label(cfg),
+    )
 
 
 def cmd_gitops_update(args: argparse.Namespace) -> int:

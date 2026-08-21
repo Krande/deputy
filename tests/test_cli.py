@@ -128,3 +128,47 @@ def test_target_without_tag_or_image_fails(captured, cfg_file):
 def test_adhoc_missing_required_flags_fails(captured):
     with pytest.raises(SystemExit):
         cli.main(["gitops-update", "--image", "ghcr.io/o/a:1"])  # no --file/--kind/--image-path
+
+
+# ── pr-review / tag-on-merge: the configured default release label ────────────
+
+PR_TOML = """\
+[pr_review]
+default_label = "release-auto"
+"""
+
+
+@pytest.fixture
+def pr_cfg_file(tmp_path, monkeypatch):
+    p = tmp_path / "deputy.toml"
+    p.write_text(PR_TOML, encoding="utf-8")
+    monkeypatch.delenv("DEPUTY_DEFAULT_LABEL", raising=False)
+    monkeypatch.setenv("DEPUTY_CONFIG", "semantic-release.toml")  # skip rendering a temp config
+    monkeypatch.setenv("GITHUB_TOKEN", "t")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+    monkeypatch.setattr(cli, "read_event", lambda: {"pull_request": {}})
+    return str(p)
+
+
+def test_pr_review_passes_the_configured_default_label(monkeypatch, pr_cfg_file):
+    calls = []
+    monkeypatch.setattr(cli, "pr_review", lambda *a, **kw: calls.append(kw) or 0)
+    assert cli.main(["pr-review", "--config", pr_cfg_file]) == 0
+    assert calls[0]["default_label"] == "release-auto"
+
+
+def test_tag_on_merge_passes_the_configured_default_label(monkeypatch, pr_cfg_file):
+    calls = []
+    monkeypatch.setattr(cli, "tag_on_merge", lambda *a, **kw: calls.append(kw) or 0)
+    assert cli.main(["tag-on-merge", "--config", pr_cfg_file]) == 0
+    assert calls[0]["default_label"] == "release-auto"
+
+
+def test_tag_on_merge_unconfigured_defaults_to_skip(monkeypatch, tmp_path):
+    monkeypatch.delenv("DEPUTY_DEFAULT_LABEL", raising=False)
+    monkeypatch.setenv("DEPUTY_CONFIG", "semantic-release.toml")
+    monkeypatch.setattr(cli, "read_event", lambda: {"pull_request": {}})
+    calls = []
+    monkeypatch.setattr(cli, "tag_on_merge", lambda *a, **kw: calls.append(kw) or 0)
+    assert cli.main(["tag-on-merge", "--config", str(tmp_path / "none.toml")]) == 0
+    assert calls[0]["default_label"] == "release-skip"

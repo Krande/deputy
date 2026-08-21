@@ -21,7 +21,12 @@ from typing import Any
 
 import tomli_w
 
+from .labels import DEFAULT_LABEL, RELEASE_FORCE_FLAG
+
 DEFAULT_CONFIG_FILE = "deputy.toml"
+
+# Env override for [pr_review].default_label (the "CLI flag / env var" layer).
+DEFAULT_LABEL_ENV = "DEPUTY_DEFAULT_LABEL"
 
 # The semantic-release configuration deputy renders when a repo doesn't override
 # it. Mirrors what a hand-written [tool.semantic_release] block used to provide,
@@ -72,6 +77,38 @@ def load_config(path: str | None = None) -> dict:
         return {}
     with p.open("rb") as fh:
         return tomllib.load(fh)
+
+
+# ── pr-review knobs ───────────────────────────────────────────────────────────
+
+
+def resolve_default_label(cfg: dict) -> str:
+    """The release-* label applied when a PR carries none.
+
+    Layers, most-specific first: ``$DEPUTY_DEFAULT_LABEL`` -> deputy.toml's
+    ``[pr_review].default_label`` -> the built-in ``release-skip``. Empty values
+    count as unset (an unset Actions expression renders as "").
+
+    The key lives under ``[pr_review]``, not ``[release]``: the latter is
+    deep-merged into the generated semantic-release config, so a deputy-only key
+    there would leak into semantic-release's own config file.
+
+    Raises ``ValueError`` on an unrecognised label — silently falling back to
+    ``release-skip`` would let a repo believe it is auto-releasing when it is not.
+    """
+    env = os.environ.get(DEFAULT_LABEL_ENV)
+    configured = cfg.get("pr_review", {}).get("default_label")
+    value = env or configured
+    if not value:
+        return DEFAULT_LABEL
+    if value not in RELEASE_FORCE_FLAG:
+        source = DEFAULT_LABEL_ENV if env else "[pr_review].default_label"
+        valid = ", ".join(RELEASE_FORCE_FLAG)
+        raise ValueError(f"invalid {source} {value!r}; valid options: {valid}")
+    return value
+
+
+# ── semantic-release config ───────────────────────────────────────────────────
 
 
 def render_release_config(overrides: dict | None = None) -> str:

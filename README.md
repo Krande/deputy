@@ -183,11 +183,30 @@ branch_prefix = "deputy/release-watch"      # head branch is "<branch_prefix>/<n
 labels        = ["dependencies"]            # labels applied to the PR
 
 [pr_review]
-marker = "<!-- MY_PR_BOT -->"               # keep an existing sticky-comment thread
+marker        = "<!-- MY_PR_BOT -->"        # keep an existing sticky-comment thread
+default_label = "release-auto"              # label applied when a PR carries no release-*
+                                            # (default: "release-skip")
 
 [release]                                   # semantic-release overrides (see below)
 version_toml = ["pyproject.toml:project.version"]
 ```
+
+### `[pr_review]` schema
+
+| Field | Required | Default | Meaning |
+|---|---|---|---|
+| `marker` | no | `<!-- DEPUTY_PR_BOT -->` | Sticky-comment marker; set it to a previous bot's marker to keep an existing thread. |
+| `default_label` | no | `release-skip` | The `release-*` label `pr-review` applies when a PR carries none. Set it to `release-auto` to make releasing the default and `release-skip` the opt-out. One of `release-skip` / `release-auto` / `release-patch` / `release-minor` / `release-major` — anything else is a hard error rather than a silent fallback. |
+
+`default_label` is honoured by **both** flows: `pr-review` applies it to the PR,
+and `tag-on-merge` falls back to it when the PR carries no `release-*` label (so
+a PR that never went through `pr-review`, or had its label removed, still gets
+the repo's intended behaviour). An explicit label always wins over the default —
+in particular a PR labelled `release-skip` never releases, whatever the default is.
+
+Note the key lives under `[pr_review]`, **not** `[release]`: `[release]` is
+deep-merged into the semantic-release config deputy generates, so a deputy-only
+key there would be handed to semantic-release.
 
 ### `[[release_watch]]` schema
 
@@ -222,6 +241,10 @@ carrying exactly one `release-*` label (`release-patch` / `release-minor` /
 `release-major`); `tag-on-merge` then bumps the version (both `pyproject.toml`
 and `src/deputy/__init__.py`), tags `vX.Y.Z`, and publishes a GitHub Release.
 A `release-skip` PR merges without cutting a tag.
+
+A PR with no `release-*` label gets the repo's default — `release-skip` unless
+`[pr_review].default_label` says otherwise. deputy's own `deputy.toml` keeps
+`release-skip`, so releasing here stays opt-in.
 
 ## Why
 
@@ -263,6 +286,7 @@ precedence over it:
 |---|---|
 | `DEPUTY_TOML` | Path to `deputy.toml` (default `./deputy.toml`). |
 | `DEPUTY_MARKER` | Sticky-comment marker; overrides `[pr_review].marker`. Set to a previous bot's marker to keep an existing thread. |
+| `DEPUTY_DEFAULT_LABEL` | Default `release-*` label for a PR carrying none; overrides `[pr_review].default_label`. Empty counts as unset. |
 | `DEPUTY_CONFIG` | Use an existing semantic-release config file **as-is** instead of rendering one from `[release]` (back-compat). |
 
 ## Develop & test
