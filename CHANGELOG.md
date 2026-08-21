@@ -2,6 +2,51 @@
 
 
 
+## v0.4.0 (2026-08-21)
+
+### Feature
+
+* feat: make the default release label configurable
+
+pr-review applied a hardcoded release-skip to PRs carrying no release-*
+label. Repos that want the opposite policy (release by default, skip as
+the opt-out) can now set it in deputy.toml:
+
+    [pr_review]
+    default_label = &#34;release-auto&#34;
+
+Resolved as $DEPUTY_DEFAULT_LABEL -&gt; [pr_review].default_label -&gt;
+release-skip, and validated: an unrecognised value is a hard error, not a
+silent fallback to release-skip. The key deliberately lives under
+[pr_review], not [release] — [release] is deep-merged into the
+semantic-release config deputy generates, so a deputy-only key there
+would be handed to semantic-release.
+
+Both flows honour it: pr-review applies it, and tag-on-merge falls back
+to the same value when a merged PR carries no release-* label (pr-review
+never ran, or the label was removed).
+
+Also fixes a latent bug this would otherwise have activated:
+decide_bump computed `release = label != DEFAULT_LABEL`, which is only
+accidentally correct while the default is release-skip. Under a
+release-auto default, a PR explicitly labelled release-skip evaluated
+&#34;release-skip&#34; != &#34;release-auto&#34; -&gt; release=True with flag=None, i.e.
+deputy would try to release a PR the user told it to skip. Release-ness
+now follows the label&#39;s flag (`flag is not None`), which is independent
+of whatever the default happens to be.
+
+deputy&#39;s own deputy.toml keeps release-skip; releasing here stays opt-in.
+
+Co-Authored-By: Claude Opus 5 (1M context) &lt;noreply@anthropic.com&gt;
+Claude-Session: https://claude.ai/code/session_0168SX1LcVozsHmJeUWYLRdw ([`0a3e29e`](https://github.com/Krande/deputy/commit/0a3e29e66f738e1ddfafc99a6714999ef5101fde))
+
+### Unknown
+
+* Merge pull request #7 from Krande/feat/configurable-default-label
+
+feat: make the default release label configurable ([`14c509e`](https://github.com/Krande/deputy/commit/14c509e3fbb2a66081f48563c02a17cce4442ef7))
+
+
 ## v0.3.1 (2026-08-20)
 
 ### Fix
