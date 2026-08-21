@@ -3,7 +3,7 @@ from deputy.flows import pr_review, tag_on_merge
 from fakes import FakeGitHubClient, OutputRecorder, pr_event
 
 
-def run_review(event, *, has_source_key=True, version_line=" * (version line)"):
+def run_review(event, *, has_source_key=True, version_line=" * (version line)", **kwargs):
     client = FakeGitHubClient()
     out = OutputRecorder()
     rc = pr_review(
@@ -13,6 +13,7 @@ def run_review(event, *, has_source_key=True, version_line=" * (version line)"):
         version_line_fn=lambda decision: version_line,
         seed_fn=lambda title: None,
         set_output_fn=out,
+        **kwargs,
     )
     return rc, client, out
 
@@ -96,3 +97,83 @@ def test_tag_on_merge_releases_with_the_forced_flag():
     )
     assert rc == 0
     assert calls == ["--minor"]
+
+
+# ── configured default release label ──────────────────────────────────────────
+
+
+def test_pr_review_applies_the_configured_default_label():
+    rc, client, out = run_review(pr_event(title="feat: x", labels=[]), default_label="release-auto")
+    assert client.added_labels == ["release-auto"]
+    assert rc == 0
+    assert out.values["review_ok"] == "true"
+
+
+def test_pr_review_default_label_reaches_the_bump_decision():
+    seen = []
+    client = FakeGitHubClient()
+    pr_review(
+        pr_event(title="feat: x", labels=[]),
+        client,
+        has_source_key=True,
+        default_label="release-auto",
+        version_line_fn=lambda d: seen.append(d) or " * v",
+        seed_fn=lambda t: None,
+        set_output_fn=OutputRecorder(),
+    )
+    (decision,) = seen
+    assert decision.label == "release-auto"
+    assert decision.release is True
+    assert decision.flag == ""
+
+
+def test_pr_review_explicit_skip_under_an_auto_default_does_not_release():
+    seen = []
+    client = FakeGitHubClient()
+    pr_review(
+        pr_event(title="feat: x", labels=["release-skip"]),
+        client,
+        has_source_key=True,
+        default_label="release-auto",
+        version_line_fn=lambda d: seen.append(d) or " * v",
+        seed_fn=lambda t: None,
+        set_output_fn=OutputRecorder(),
+    )
+    (decision,) = seen
+    assert client.added_labels == []  # the PR already carries a release-* label
+    assert decision.label == "release-skip"
+    assert decision.release is False
+
+
+def test_tag_on_merge_uses_the_configured_default_when_no_label_is_present():
+    calls = []
+    rc = tag_on_merge(
+        pr_event(merged=True, labels=[]),
+        default_label="release-auto",
+        release_fn=lambda flag: (calls.append(flag), 0)[1],
+    )
+    assert rc == 0
+    assert calls == [""]  # released, letting semantic-release derive the bump
+
+
+def test_tag_on_merge_unconfigured_still_defaults_to_skip():
+    calls = []
+    rc = tag_on_merge(
+        pr_event(merged=True, labels=[]),
+        release_fn=lambda flag: (calls.append(flag), 0)[1],
+    )
+    assert rc == 0
+    assert calls == []
+
+
+def test_tag_on_merge_explicit_skip_wins_over_an_auto_default():
+    # The bug: with `release = label != default_label`, a PR the user explicitly
+    # labelled release-skip would release (flag None) under a release-auto default.
+    calls = []
+    rc = tag_on_merge(
+        pr_event(merged=True, labels=["release-skip"]),
+        default_label="release-auto",
+        release_fn=lambda flag: (calls.append(flag), 0)[1],
+    )
+    assert rc == 0
+    assert calls == []
