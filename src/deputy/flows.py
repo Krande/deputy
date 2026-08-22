@@ -8,7 +8,7 @@ CLI wires the real ones; tests wire fakes.
 from __future__ import annotations
 
 import pathlib
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 from .actions_io import parse_pull_request
 from .actions_io import set_output as _set_output
@@ -96,6 +96,7 @@ def tag_on_merge(
     *,
     config_file: str = "pyproject.toml",
     default_label: str = DEFAULT_LABEL,
+    version_json: Sequence[str] = (),
     release_fn: Callable[[str | None], int] | None = None,
 ) -> int:
     """On a merged PR, run semantic-release to tag/release per the release label.
@@ -103,9 +104,17 @@ def tag_on_merge(
     A PR with no release-* label (pr-review never ran, or the label was removed)
     falls back to the same configured ``default_label`` the review flow applies.
 
+    ``version_json`` are ``[release].version_json`` paths — JSON files (npm
+    ``package.json`` / ``package-lock.json``) whose own version deputy writes
+    itself, since semantic-release's regex mechanism would rewrite every
+    dependency in a lockfile. Empty by default, so a repo that declares none
+    behaves exactly as before.
+
     Returns the release subprocess's return code, or 0 when nothing is released.
     """
-    release_fn = release_fn or (lambda flag: run_release(config_file, flag))
+    release_fn = release_fn or (
+        lambda flag: run_release(config_file, flag, version_json=version_json)
+    )
 
     pr = parse_pull_request(event)
     if not pr.merged:

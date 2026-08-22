@@ -189,6 +189,7 @@ default_label = "release-auto"              # label applied when a PR carries no
 
 [release]                                   # semantic-release overrides (see below)
 version_toml = ["pyproject.toml:project.version"]
+version_json = ["src/frontend/package-lock.json"]  # npm-aware bump; deputy's own key
 ```
 
 ### `[pr_review]` schema
@@ -233,6 +234,63 @@ release time deputy renders a config from *its defaults ⊕ your `[release]`
 overrides* and hands that to semantic-release. Override any key under `[release]`
 (e.g. `version_toml`, `tag_format`, `commit_parser_options`).
 
+### Where the version gets written
+
+| Key | Mechanism | Use it for |
+|---|---|---|
+| `version_toml` | TOML-aware, one exact key | `pyproject.toml:project.version` |
+| `version_variables` | regex, replaces **every** match in the file | `src/deputy/__init__.py:__version__` |
+| `version_json` | JSON-aware, the package's own version only | `package.json`, `package-lock.json` |
+
+The first two are semantic-release's own. `version_json` is deputy's, and exists
+because the regex one cannot safely touch an npm lockfile:
+
+```toml
+[release]
+version_toml = ["pyproject.toml:project.version"]
+version_json = ["src/frontend/package.json", "src/frontend/package-lock.json"]
+```
+
+`version_variables` builds the pattern `<variable>\s*[:=]\s*"<semver>"` and
+substitutes **every** match. In a `package-lock.json` every dependency carries a
+`"version"` key — on one real 230-dependency lock the pattern matches **471
+times** — so pointing it at a lockfile rewrites the whole dependency tree to the
+project version. `version_json` parses the file instead and writes only the
+package's *own* version:
+
+* the root-level `"version"` (`package.json`, and lockfileVersion 1, 2 and 3); and
+* `packages[""]["version"]` — npm's empty-string key for the root package
+  (lockfileVersion 2 and 3; a v1 lock has no `packages` table, so only the root
+  field is written).
+
+Nothing under `dependencies`, and no non-empty key under `packages`, is touched.
+
+Notes:
+
+* **Paths only, no `file:field` suffix.** Which fields to write is implied by the
+  format — and a lockfile carries the version in two places at once, which no
+  single pointer could express anyway.
+* **Formatting is preserved byte for byte.** The indent, newline style (LF/CRLF)
+  and trailing newline are detected and reproduced, so a bump is a two-line diff
+  rather than a whole-file reformat that `npm install` would undo. deputy verifies
+  this by re-rendering the *unmodified* document first, and refuses to write if it
+  does not come back identical.
+* **It fails loudly.** A missing file, invalid JSON, a missing or non-semver root
+  `version`, or a file that cannot be reproduced aborts the release with an error
+  naming the file. Silence is how a lockfile drifts several minor versions behind.
+* **It lands in the version commit.** deputy writes and `git add`s these files
+  just before running semantic-release, which commits whatever is in the index —
+  so they are part of the commit that gets tagged, not a dirty tree left behind.
+  When semantic-release reports that no release is due, the files are left alone.
+* `version_json` is stripped from the config handed to semantic-release, which
+  knows nothing about it.
+
+Note `version_variables` still works for `package.json` on its own — its own
+`"version"` happens to be the only match — but the quoted form is required
+(`'src/frontend/package.json:"version"'`): the bare token `version` matches TOML's
+`version = "…"` and never JSON, where the key carries a closing quote before the
+colon.
+
 ## Releasing
 
 deputy dogfoods its own CI: `pr-review.yaml` and `tag-on-pr-merge.yaml` install
@@ -264,6 +322,7 @@ pr_checks.py     conventional-title + one-label checks         (pure)
 comment.py       render the sticky markdown body               (pure)
 gitops.py        patch a container image in YAML text          (pure)
 release_watch.py semver compare + pinned-version rewrite       (pure)
+jsonversion.py   npm-aware version rewrite, formatting-preserving (pure)
 config.py        deputy.toml loader, precedence, release defaults (pure)
 version.py       semantic-release wrappers (env-isolated, injectable runner)
 actions_io.py    read the event payload; write GITHUB_OUTPUT   (heredoc-safe)
