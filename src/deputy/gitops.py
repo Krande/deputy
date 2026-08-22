@@ -35,6 +35,41 @@ def _set_at(node: object, path: list[str | int], value: str) -> None:
     cur[path[-1]] = value  # type: ignore[index]
 
 
+def detect_sequence_indent(yaml_text: str) -> tuple[int, int]:
+    """The (sequence, offset) ruamel needs to reproduce this file's list style.
+
+    Kubernetes manifests are written both ways and neither is wrong::
+
+        containers:            containers:
+        - name: x                - name: x
+
+    ruamel cannot infer this. It reformats every block sequence to whatever it
+    was configured with, so hardcoding one convention rewrites the indentation of
+    the entire file on any bump -- burying a one-line image change in a diff of
+    dozens of lines, which is how a wrong tag slips through review.
+
+    Learns from the first block sequence in the file. A file mixing both styles
+    is already inconsistent and cannot be reproduced exactly either way. Falls
+    back to ruamel's expanded defaults when there is no sequence to learn from.
+    """
+    lines = yaml_text.splitlines()
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped.endswith(":") or stripped.startswith(("#", "-")):
+            continue
+        key_indent = len(line) - len(line.lstrip(" "))
+        for nxt in lines[i + 1 :]:
+            t = nxt.strip()
+            if not t or t.startswith("#"):
+                continue
+            if t.startswith("- ") or t == "-":
+                offset = len(nxt) - len(nxt.lstrip(" ")) - key_indent
+                if offset >= 0:
+                    return offset + 2, offset
+            break
+    return 4, 2
+
+
 def set_image(yaml_text: str, *, kind: str, image_path: str, image: str) -> tuple[str, int]:
     """Set the image at ``image_path`` to ``image`` in every document of
     ``yaml_text`` whose top-level ``kind`` matches.
@@ -46,11 +81,12 @@ def set_image(yaml_text: str, *, kind: str, image_path: str, image: str) -> tupl
     """
     yaml = YAML()
     yaml.preserve_quotes = True
-    # Match the conventional k8s manifest style (block sequences indented under
-    # their key, dash offset by 2) so a bump touches only the image line instead
-    # of reflowing every list in the file. Wide width keeps long image refs on
-    # one line.
-    yaml.indent(mapping=2, sequence=4, offset=2)
+    # Match the style the FILE already uses rather than a fixed convention, so a
+    # bump touches only the image line instead of reflowing every list. Both k8s
+    # styles are common and ruamel reformats to whatever it is told, so guessing
+    # rewrites the whole file. Wide width keeps long image refs on one line.
+    sequence, offset = detect_sequence_indent(yaml_text)
+    yaml.indent(mapping=2, sequence=sequence, offset=offset)
     yaml.width = 4096
     docs = list(yaml.load_all(yaml_text))
     path = parse_path(image_path)
