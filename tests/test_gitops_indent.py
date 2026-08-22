@@ -48,7 +48,11 @@ spec:
 
 
 def _changed_lines(before: str, after: str) -> list[tuple[str, str]]:
-    return [(a, b) for a, b in zip(before.splitlines(), after.splitlines()) if a != b]
+    # strict=False deliberately: if a regression DID change the line count, this
+    # helper should still report which lines differ so the failure is readable.
+    # strict=True would raise a ValueError instead, hiding it. The line count is
+    # asserted separately, by test_line_count_is_unchanged_in_both_styles.
+    return [(a, b) for a, b in zip(before.splitlines(), after.splitlines(), strict=False) if a != b]
 
 
 def test_detects_compact_style():
