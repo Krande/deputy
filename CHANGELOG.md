@@ -2,6 +2,72 @@
 
 
 
+## v0.5.1 (2026-08-22)
+
+### Fix
+
+* fix(tests): make the zip strictness explicit in the indent helper
+
+ruff B905. Chose strict=False rather than True on purpose: if a regression DID
+change the line count, this helper should still report which lines differ so
+the failure is readable. strict=True would raise a ValueError instead and hide
+it behind a traceback. The line count has its own assertion in
+test_line_count_is_unchanged_in_both_styles.
+
+Co-Authored-By: Claude Opus 5 (1M context) &lt;noreply@anthropic.com&gt;
+Claude-Session: https://claude.ai/code/session_01Mdyz12Wh4LQgzdAN1DYneo ([`e6158f0`](https://github.com/Krande/deputy/commit/e6158f0d3face851cdc9b3a2dd47d6dc0dbff2dd))
+
+* fix(gitops): match the file&#39;s list indentation instead of imposing one
+
+set_image hardcoded ruamel&#39;s expanded block-sequence style. Kubernetes
+manifests are written both ways:
+
+    containers:            containers:
+    - name: x                - name: x
+
+and ruamel cannot infer which a file uses -- it reformats every block sequence
+to whatever it was configured with. So bumping an image in a compact-style file
+rewrote the indentation of the entire file.
+
+That is not cosmetic. A gitops write-back is supposed to be a reviewable
+one-line change. It arrived as &#34;38 insertions, 38 deletions&#34; across a 76-line
+manifest, and a version REGRESSION inside it -- an image going from 1.1.6 to
+0.0.1 -- read as whitespace and went unnoticed until the deployment was
+inspected by hand.
+
+detect_sequence_indent learns the style from the first block sequence in the
+file and set_image configures ruamel with it, so both styles now round-trip to
+a single changed line. Files with no block sequence fall back to ruamel&#39;s
+defaults, where there is nothing to preserve and so nothing to get wrong.
+
+Deliberately no regex: the detector walks lines, which keeps it readable and
+avoids a pattern that has to be right about comments, blank lines and quoting
+all at once. A file mixing both styles is already inconsistent and cannot be
+reproduced exactly either way; the first sequence wins.
+
+8 new tests, including that the line COUNT is unchanged -- a reflow shows up
+there when a folded scalar wraps differently, which is the variant easiest to
+miss in review -- and that a nested second sequence keeps its style too.
+Suite 188 -&gt; 196.
+
+Co-Authored-By: Claude Opus 5 (1M context) &lt;noreply@anthropic.com&gt;
+Claude-Session: https://claude.ai/code/session_01Mdyz12Wh4LQgzdAN1DYneo ([`3151d6b`](https://github.com/Krande/deputy/commit/3151d6b71507acacec9830ca2db83111d58385d5))
+
+### Unknown
+
+* Merge pull request #9 from Krande/fix/gitops-match-existing-indent
+
+fix(gitops): match the file&#39;s list indentation instead of imposing one ([`726d8ec`](https://github.com/Krande/deputy/commit/726d8ecd0db32b6e2dfb0437a6425629bc3e1204))
+
+* style: ruff format the indent tests
+
+I ran `ruff check` but not `ruff format` on the previous fix; the repo&#39;s test
+task gates on both. No behaviour change -- two set_image calls wrapped.
+
+Co-Authored-By: Claude Opus 5 (1M context) &lt;noreply@anthropic.com&gt;
+Claude-Session: https://claude.ai/code/session_01Mdyz12Wh4LQgzdAN1DYneo ([`6fca8eb`](https://github.com/Krande/deputy/commit/6fca8ebe7a5a9966b601a6af6a7649e43c2e0317))
+
+
 ## v0.5.0 (2026-08-22)
 
 ### Feature
