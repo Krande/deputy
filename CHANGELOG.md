@@ -2,6 +2,71 @@
 
 
 
+## v0.5.0 (2026-08-22)
+
+### Feature
+
+* feat: add version_json — a JSON-aware bump for npm lockfiles
+
+semantic-release&#39;s version_variables is a regex: it builds
+`&lt;variable&gt;\s*[:=]\s*&#34;&lt;semver&gt;&#34;` and substitutes every match in the file.
+That is fine for package.json, whose own &#34;version&#34; is the only match, but
+catastrophic for package-lock.json — every dependency carries a &#34;version&#34;
+key. On adapy&#39;s lock the pattern matches 471 times across 230 distinct
+versions, so declaring it would rewrite the whole dependency tree to the
+project version. As a result lockfiles just don&#39;t get bumped: adapy&#39;s has
+drifted three minor versions behind.
+
+Add a third declaration alongside version_toml / version_variables:
+
+    [release]
+    version_json = [&#34;src/frontend/package.json&#34;,
+                    &#34;src/frontend/package-lock.json&#34;]
+
+Paths only — the fields are implied by the format, and a lockfile carries
+its version in two places at once, which no single pointer could express.
+deputy parses the JSON and writes only the package&#39;s own version: the root
+&#34;version&#34; (package.json, and lockfileVersion 1/2/3) plus packages[&#34;&#34;]
+[&#34;version&#34;] (npm&#39;s root-package key, v2/v3 only). Nothing under
+dependencies, and no non-empty packages key, is touched.
+
+Formatting is preserved byte for byte — indent, LF/CRLF, trailing newline
+and BOM are detected and reproduced, so a bump is a two-line diff instead
+of a whole-file reformat that npm install would undo. deputy proves this
+per file by re-rendering the unmodified document and comparing it with the
+original, and refuses to write when it does not come back identical.
+
+Failures are loud: a missing file, invalid JSON, a missing or non-semver
+root version, or an unreproducible file aborts the release with an error
+naming the file.
+
+semantic-release cannot run this itself, so deputy does, immediately
+before invoking it: bump, `git add`, then release. semantic-release stages
+its own version files and runs a bare `git commit`, which picks up the
+whole index — so the JSON files land in the commit that gets tagged rather
+than dangling dirty in the tree. version_json is stripped from the
+generated semantic-release config, which knows nothing about the key.
+
+The version to write comes from `version --print` via a new strict
+planned_version(), which raises instead of guessing when semantic-release
+cannot be run or fails. Note that command puts only the version on stdout
+and everything else on stderr, so stdout is identical whether or not a
+release is due; the &#34;already been released&#34; line on stderr is what tells
+them apart. next_version_noop stays best-effort for the PR comment.
+
+Fully backward compatible: a repo that declares no version_json takes
+exactly the path it does today.
+
+Co-Authored-By: Claude Opus 5 (1M context) &lt;noreply@anthropic.com&gt;
+Claude-Session: https://claude.ai/code/session_01Mdyz12Wh4LQgzdAN1DYneo ([`566a8b6`](https://github.com/Krande/deputy/commit/566a8b64d9624001dffc7ee8207e9ec97a63c75d))
+
+### Unknown
+
+* Merge pull request #8 from Krande/feat/json-version-declarations
+
+feat: add version_json — a JSON-aware version bump for npm lockfiles ([`375db7e`](https://github.com/Krande/deputy/commit/375db7efe770e1ed66f36b9b0bfc7139e7103164))
+
+
 ## v0.4.0 (2026-08-21)
 
 ### Feature
