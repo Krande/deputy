@@ -74,7 +74,9 @@ def test_a_comment_between_key_and_item_does_not_confuse_it():
 
 
 def test_compact_file_stays_compact_and_changes_one_line():
-    out, matched = set_image(COMPACT, kind="Deployment", image_path=PATH, image="reg.example/app:1.1.7")
+    out, matched = set_image(
+        COMPACT, kind="Deployment", image_path=PATH, image="reg.example/app:1.1.7"
+    )
     assert matched == 1
     changed = _changed_lines(COMPACT, out)
     assert len(changed) == 1, f"expected a one-line diff, got {changed}"
@@ -84,7 +86,9 @@ def test_compact_file_stays_compact_and_changes_one_line():
 
 
 def test_expanded_file_stays_expanded_and_changes_one_line():
-    out, matched = set_image(EXPANDED, kind="Deployment", image_path=PATH, image="reg.example/app:1.1.7")
+    out, matched = set_image(
+        EXPANDED, kind="Deployment", image_path=PATH, image="reg.example/app:1.1.7"
+    )
     assert matched == 1
     changed = _changed_lines(EXPANDED, out)
     assert len(changed) == 1, f"expected a one-line diff, got {changed}"
