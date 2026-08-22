@@ -55,6 +55,13 @@ RELEASE_DEFAULTS: dict[str, Any] = {
     "publish": {"upload_to_vcs_release": True},
 }
 
+# Keys accepted in [release] for the user's convenience — next to their
+# semantic-release siblings version_toml / version_variables — but which
+# semantic-release itself knows nothing about. deputy applies them and strips
+# them from the config it renders, so the generated file stays an honest
+# semantic-release config rather than relying on it to ignore extra keys.
+DEPUTY_RELEASE_KEYS = ("version_json",)
+
 
 def deep_merge(base: dict, over: dict) -> dict:
     """Recursively merge ``over`` onto ``base`` (lists/scalars replace, not append)."""
@@ -111,9 +118,24 @@ def resolve_default_label(cfg: dict) -> str:
 # ── semantic-release config ───────────────────────────────────────────────────
 
 
+def version_json_paths(cfg: dict) -> list[str]:
+    """``[release].version_json`` — JSON files whose own version deputy bumps itself.
+
+    A path-only declaration (no ``file:field`` suffix): for npm's ``package.json``
+    and ``package-lock.json`` the fields are implied by the format, and *which*
+    fields is not something a single pointer could express anyway — a lockfile
+    carries the package's version in two places at once. See
+    :mod:`deputy.jsonversion`.
+    """
+    return list(cfg.get("release", {}).get("version_json", []))
+
+
 def render_release_config(overrides: dict | None = None) -> str:
-    """Return TOML text for a semantic-release config: defaults ⊕ ``overrides``."""
+    """Return TOML text for a semantic-release config: defaults ⊕ ``overrides``,
+    minus deputy's own [release] keys (which semantic-release must not see)."""
     merged = deep_merge(RELEASE_DEFAULTS, overrides or {})
+    for key in DEPUTY_RELEASE_KEYS:
+        merged.pop(key, None)
     return tomli_w.dumps({"tool": {"semantic_release": merged}})
 
 

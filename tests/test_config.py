@@ -19,6 +19,7 @@ from deputy.config import (
     render_release_config,
     resolve_default_label,
     resolve_image_ref,
+    version_json_paths,
 )
 
 TOML = """\
@@ -205,3 +206,46 @@ def test_default_label_is_not_a_release_table_key():
     assert "default_label" not in RELEASE_DEFAULTS
     rendered = tomllib.loads(render_release_config({"default_label": "release-auto"}))
     assert "default_label" in rendered["tool"]["semantic_release"]  # ...it would leak
+
+
+# ── [release].version_json ────────────────────────────────────────────────────
+
+VERSION_JSON_TOML = TOML.replace(
+    "[release]\n",
+    '[release]\nversion_json = ["src/frontend/package.json", "src/frontend/package-lock.json"]\n',
+)
+
+
+def test_version_json_paths_read_from_the_release_table(tmp_path):
+    cfg = load_config(_write(tmp_path, VERSION_JSON_TOML))
+    assert version_json_paths(cfg) == [
+        "src/frontend/package.json",
+        "src/frontend/package-lock.json",
+    ]
+
+
+def test_version_json_paths_default_to_empty():
+    assert version_json_paths({}) == []
+    assert (
+        version_json_paths({"release": {"version_toml": ["pyproject.toml:project.version"]}}) == []
+    )
+
+
+def test_version_json_is_stripped_from_the_generated_semantic_release_config(tmp_path):
+    # semantic-release knows nothing about version_json; deputy applies it and
+    # must not hand the key on. The rest of [release] still passes through.
+    cfg = load_config(_write(tmp_path, VERSION_JSON_TOML))
+    rendered = tomllib.loads(render_release_config(cfg["release"]))["tool"]["semantic_release"]
+    assert "version_json" not in rendered
+    assert rendered["tag_format"] == "release-{version}"
+    assert rendered["version_toml"] == ["action_config.toml:tool.action.version"]
+
+
+def test_stripping_version_json_does_not_mutate_the_callers_dict():
+    overrides = {"version_json": ["a.json"], "tag_format": "v{version}"}
+    render_release_config(overrides)
+    assert overrides["version_json"] == ["a.json"]
+
+
+def test_version_json_is_not_a_semantic_release_default():
+    assert "version_json" not in RELEASE_DEFAULTS

@@ -49,6 +49,7 @@ from .config import (
     release_watch_targets,
     resolve_default_label,
     resolve_image_ref,
+    version_json_paths,
     write_release_config,
 )
 from .flows import create_sshkey, gitops_update, pr_review, release_watch, tag_on_merge
@@ -89,6 +90,7 @@ def cmd_tag_on_merge(args: argparse.Namespace) -> int:
         read_event(),
         config_file=_release_config_path(cfg),
         default_label=resolve_default_label(cfg),
+        version_json=version_json_paths(cfg),
     )
 
 

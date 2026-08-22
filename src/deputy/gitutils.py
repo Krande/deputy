@@ -67,3 +67,22 @@ def commit_to_branch(
     runner(["git", "-C", cwd, "commit", "-m", message])
     if push:
         runner(["git", "-C", cwd, "push", "--force-with-lease", "-u", "origin", branch])
+
+
+def stage_paths(
+    paths: Sequence[str],
+    *,
+    cwd: str | None = None,
+    runner: Runner = subprocess.run,
+) -> None:
+    """``git add`` ``paths`` without committing.
+
+    Used by the release flow for files deputy bumps itself (see
+    ``[release].version_json``): semantic-release commits whatever is in the
+    index, so staging beforehand lands the change in the version commit instead
+    of leaving it dirty in the tree.
+    """
+    if not paths:
+        return
+    prefix = ["git", "-C", cwd] if cwd else ["git"]
+    runner([*prefix, "add", "--", *paths])

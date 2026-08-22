@@ -177,3 +177,37 @@ def test_tag_on_merge_explicit_skip_wins_over_an_auto_default():
     )
     assert rc == 0
     assert calls == []
+
+
+# ── [release].version_json passthrough ────────────────────────────────────────
+
+
+def test_tag_on_merge_hands_version_json_to_the_release(monkeypatch):
+    seen = {}
+
+    def fake_run_release(config_file, flag, *args, **kwargs):
+        seen.update(config_file=config_file, flag=flag, version_json=kwargs.get("version_json"))
+        return 0
+
+    monkeypatch.setattr("deputy.flows.run_release", fake_run_release)
+    rc = tag_on_merge(
+        pr_event(merged=True, labels=["release-minor"]),
+        config_file="cfg.toml",
+        version_json=["src/frontend/package-lock.json"],
+    )
+    assert rc == 0
+    assert seen == {
+        "config_file": "cfg.toml",
+        "flag": "--minor",
+        "version_json": ["src/frontend/package-lock.json"],
+    }
+
+
+def test_tag_on_merge_declares_no_version_json_by_default(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        "deputy.flows.run_release",
+        lambda config_file, flag, *a, **kw: (seen.update(kw), 0)[1],
+    )
+    tag_on_merge(pr_event(merged=True, labels=["release-patch"]), config_file="cfg.toml")
+    assert seen["version_json"] == ()
