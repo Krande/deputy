@@ -2,6 +2,46 @@
 
 
 
+## v0.5.2 (2026-08-25)
+
+### Fix
+
+* fix: pin gitpython below 3.1.60 (#10)
+
+GitPython 3.1.60, released 2026-08-25, removed `git.Actor.name_email_regex`.
+python-semantic-release reads that attribute UNCONDITIONALLY at config load --
+8.5.1 at cli/config.py:294, and its current default branch still does at :745 --
+so every semantic-release subcommand raises
+
+    AttributeError: type object &#39;Actor&#39; has no attribute &#39;name_email_regex&#39;
+
+the moment an install resolves 3.1.60. deputy pins the version of PSR but not of
+the library PSR breaks on, so a fresh `pip install deputy` was enough to break
+tagging everywhere it is used.
+
+The failure is quiet, which is the reason to pin rather than hope: pr-review
+catches the exception and degrades its sticky comment to &#34;No release will be
+issued for these commits&#34; while the job still reports success. A merge then
+yields a green tick and no release, which reads exactly like ordinary
+base-ref behaviour.
+
+Pinned in BOTH dependency blocks. The pip path and the conda path resolve
+independently, so constraining only [project].dependencies would leave the
+run-dependencies free to take 3.1.60.
+
+Verified by installing this source into a clean target:
+
+    gitpython resolved      : 3.1.59
+    name_email_regex present: True
+    PSR config module loaded: OK
+
+deputy&#39;s own release workflows use `pip install .`, so they pick this up from
+the merge commit and need no separate unblocking.
+
+Drop the pin once PSR guards the attribute, or once its pinned version no
+longer reads it. ([`06e6a93`](https://github.com/Krande/deputy/commit/06e6a93d312ffabad22a6f6db4a0a924b3c6b320))
+
+
 ## v0.5.1 (2026-08-22)
 
 ### Fix
