@@ -12,6 +12,21 @@ dependencies = [
     # semantic-release is invoked as a subprocess by the version/release
     # helpers, so installing deputy puts it on PATH for the workflows.
     "python-semantic-release==8.5.1",
+    # GitPython 3.1.60 (2026-08-25) removed `git.Actor.name_email_regex`, which
+    # python-semantic-release reads UNCONDITIONALLY at config load — 8.5.1 at
+    # cli/config.py:294, and its current default branch still does at :745. So
+    # every semantic-release subcommand raises AttributeError the moment an
+    # install picks up 3.1.60, and deputy pins the version of PSR but not of the
+    # library it breaks on.
+    #
+    # The failure is quiet, which is why this is pinned rather than left to
+    # chance: `deputy pr-review` catches the exception and degrades its sticky
+    # comment to "No release will be issued for these commits" while the job
+    # still reports success. A merge then produces a green tick and no release.
+    #
+    # Drop this once PSR guards the attribute, or once its pinned version no
+    # longer reads it.
+    "gitpython<3.1.60",
     # comment-preserving YAML edits for the gitops-update command.
     "ruamel.yaml>=0.17",
     # write the rendered semantic-release config (tomllib reads, tomli-w writes).
@@ -58,5 +73,9 @@ hatchling = "*"
 [tool.pixi.package.run-dependencies]
 python = ">=3.12"
 python-semantic-release = "==8.5.1"
+# Mirrors the gitpython pin in [project].dependencies above -- see the comment
+# there. Both blocks must carry it: the pip path and the conda path resolve
+# independently, so pinning only one leaves the other able to take 3.1.60.
+gitpython = "<3.1.60"
 "ruamel.yaml" = ">=0.17"
 tomli-w = ">=1.0"
