@@ -10,8 +10,14 @@ from .pr_checks import PrChecks
 MARKER = "<!-- DEPUTY_PR_BOT -->"
 
 
-def render_body(checks: PrChecks, version_line: str) -> str:
-    """The visible markdown body (no marker)."""
+def render_body(checks: PrChecks, version_line: str, note: str | None = None) -> str:
+    """The visible markdown body (no marker).
+
+    ``note`` is an optional line for something deputy *did* to the PR (as
+    opposed to something it checked) — currently only the removal of its own
+    superseded default label. Label edits made by a bot should be readable from
+    the PR, not inferred from the label list changing under you.
+    """
     lines = [
         " * ✅ PR title is ok"
         if checks.title_ok
@@ -24,6 +30,8 @@ def render_body(checks: PrChecks, version_line: str) -> str:
         else " * ℹ️ SOURCE_KEY secret not set (only needed for automated release)",
         version_line,
     ]
+    if note:
+        lines.append(f" * ℹ️ {note}")
     header = (
         "👋 I checked your PR and found no issues. Thanks!\n\n"
         if checks.ok
@@ -32,6 +40,6 @@ def render_body(checks: PrChecks, version_line: str) -> str:
     return "# PR Review\n\n" + header + "\n".join(lines) + "\n"
 
 
-def render_sticky(checks: PrChecks, version_line: str) -> str:
+def render_sticky(checks: PrChecks, version_line: str, note: str | None = None) -> str:
     """The body actually posted: marker + visible body."""
-    return MARKER + "\n" + render_body(checks, version_line)
+    return MARKER + "\n" + render_body(checks, version_line, note)
