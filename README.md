@@ -205,6 +205,46 @@ a PR that never went through `pr-review`, or had its label removed, still gets
 the repo's intended behaviour). An explicit label always wins over the default —
 in particular a PR labelled `release-skip` never releases, whatever the default is.
 
+#### The default yields to an explicit label
+
+The default is a **stand-in**, so deputy takes it back off the PR as soon as a
+real choice appears next to it. Add `release-patch` to a PR deputy has already
+defaulted to `release-auto`, and the next `pr-review` run removes `release-auto`
+and says so in its comment; the PR is left carrying exactly one label.
+
+This matters because **two `release-*` labels release nothing at all**. Without
+the rule, the most ordinary sequences leave two behind and the PR merges green
+with no version cut and nothing to notice:
+
+* deputy defaults a label-less PR, then the author adds the label they wanted;
+* someone removes a label and re-adds it to re-trigger the check — the removal
+  re-runs `pr-review` against a PR with no `release-*` label, so the default goes
+  on, and re-adding the real label makes two.
+
+`tag-on-merge` applies the same rule, so a PR that merged still carrying both
+releases at the explicit label's level rather than silently doing nothing.
+
+Deliberately **not** covered: two *explicit* labels (`release-patch` +
+`release-minor`) remain a hard error. Guessing between two stated choices would
+ship the wrong version, and the only label deputy will ever remove from a PR is
+the default it applies itself. One consequence worth knowing: a label set carries
+no author, so a PR labelled with the default *by hand* looks identical to one
+deputy defaulted, and the rule drops it too.
+
+Your `pr-review` workflow should therefore trigger on `labeled` as well as
+`unlabeled`:
+
+```yaml
+on:
+  pull_request_target:
+    types: [opened, synchronize, edited, labeled, unlabeled]
+```
+
+Without `labeled`, adding a release label never re-runs the review, so the green
+tick you merge on was calculated against a label set that no longer exists.
+deputy's own label edits do not re-trigger the workflow (events raised with
+`GITHUB_TOKEN` do not start workflow runs), and a repeated run is a no-op anyway.
+
 Note the key lives under `[pr_review]`, **not** `[release]`: `[release]` is
 deep-merged into the semantic-release config deputy generates, so a deputy-only
 key there would be handed to semantic-release.
@@ -302,7 +342,9 @@ A `release-skip` PR merges without cutting a tag.
 
 A PR with no `release-*` label gets the repo's default — `release-skip` unless
 `[pr_review].default_label` says otherwise. deputy's own `deputy.toml` keeps
-`release-skip`, so releasing here stays opt-in.
+`release-skip`, so releasing here stays opt-in. Add the label you actually want
+and deputy removes the default it applied, so the PR never ends up with the two
+labels that would quietly suppress the release.
 
 ## Why
 

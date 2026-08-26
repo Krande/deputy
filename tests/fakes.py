@@ -12,6 +12,10 @@ class FakeGitHubClient:
         self.comments: list[Comment] = []
         self.ensured_labels: list[tuple[str, str]] = []
         self.added_labels: list[str] = []
+        self.removed_labels: list[str] = []
+        # Live label state per issue, so a test can replay a real sequence of
+        # events (label -> review -> label -> review) instead of one snapshot.
+        self.labels: dict[int, list[str]] = {}
         self._next_id = 0
         # release-watch fixtures: upstream repo -> latest release tag / tag list,
         # and the PRs this client has opened on the consumer repo.
@@ -41,6 +45,14 @@ class FakeGitHubClient:
 
     def add_labels(self, issue: int, labels: list[str]) -> None:
         self.added_labels.extend(labels)
+        current = self.labels.setdefault(issue, [])
+        current.extend(name for name in labels if name not in current)
+
+    def remove_label(self, issue: int, name: str) -> None:
+        self.removed_labels.append(name)
+        current = self.labels.setdefault(issue, [])
+        if name in current:
+            current.remove(name)
 
     # ── release-watch surface ────────────────────────────────────────────────
     def latest_release(self, repo: str) -> Release | None:

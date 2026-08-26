@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Protocol
@@ -38,6 +39,7 @@ class GitHubClient(Protocol):
     def update_comment(self, comment_id: int, body: str) -> None: ...
     def ensure_label(self, name: str, color: str) -> None: ...
     def add_labels(self, issue: int, labels: list[str]) -> None: ...
+    def remove_label(self, issue: int, name: str) -> None: ...
     # release-watch: query an upstream repo, find/open a bump PR on this repo.
     def latest_release(self, repo: str) -> Release | None: ...
     def list_tags(self, repo: str) -> list[str]: ...
@@ -100,6 +102,19 @@ class RestGitHubClient:
 
     def add_labels(self, issue: int, labels: list[str]) -> None:
         self._request("POST", f"/issues/{issue}/labels", {"labels": labels})
+
+    def remove_label(self, issue: int, name: str) -> None:
+        """Take one label off an issue/PR. A label that is already gone is fine.
+
+        404 is the normal outcome of a race (a human removed it between the
+        event payload being written and this call), not an error worth failing
+        the review over.
+        """
+        try:
+            self._request("DELETE", f"/issues/{issue}/labels/{urllib.parse.quote(name)}")
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
+                raise
 
     def latest_release(self, repo: str) -> Release | None:
         """Latest published GitHub Release of ``repo`` (owner/name), or None."""

@@ -41,6 +41,9 @@ class BumpDecision:
     label: str  # the single effective label (or "release-skip")
     present: tuple[str, ...]  # recognised release-* labels found on the PR
     multiple: bool  # more than one release-* label present (invalid)
+    # The default label that lost to an explicit one and should come off the PR
+    # (see `decide_bump`). None whenever nothing was superseded.
+    superseded_default: str | None = None
 
     @property
     def reason(self) -> str:
@@ -61,12 +64,39 @@ def decide_bump(labels: list[str], default_label: str = DEFAULT_LABEL) -> BumpDe
     label to the default: ``None`` means "do not release", every other flag
     means "release". A PR explicitly labelled ``release-skip`` therefore never
     releases, even under a ``release-auto`` default.
+
+    **The default is a fallback, so it yields to an explicit choice.** When the
+    default label sits next to exactly one other release-* label, that other
+    label decides and the default is reported in ``superseded_default`` for the
+    review flow to take off the PR. Without this rule, the ordinary sequence
+    "PR has no label -> deputy applies the default -> author adds the label they
+    actually wanted" leaves two labels behind, and two labels release *nothing*:
+    the PR merges green and no version is ever cut. That silence is the whole
+    reason the rule exists.
+
+    Two *explicit* labels are still a hard error — resolving ``release-patch``
+    against ``release-minor`` would be a guess, and a wrong guess ships the wrong
+    version. Only the repo's own default is ever dropped, and only when a single
+    explicit label is there to replace it.
+
+    Caveat, stated plainly: a label set carries no author, so a PR labelled with
+    the default *by hand* is indistinguishable from one deputy defaulted, and
+    this rule will drop it too. That is the intended trade — the label deputy
+    applies unprompted is far more common than a deliberate duplicate — but it is
+    a resolution, not a proof.
     """
     present = tuple(label for label in labels if label in RELEASE_FORCE_FLAG)
     if not present:
         present = (default_label,)
-    if len(present) > 1:
-        return BumpDecision(False, None, present[0], present, True)
-    label = present[0]
+
+    superseded: str | None = None
+    effective = present
+    if len(present) == 2 and default_label in present:
+        superseded = default_label
+        effective = tuple(label for label in present if label != default_label)
+
+    if len(effective) > 1:
+        return BumpDecision(False, None, effective[0], present, True)
+    label = effective[0]
     flag = RELEASE_FORCE_FLAG[label]
-    return BumpDecision(flag is not None, flag, label, present, False)
+    return BumpDecision(flag is not None, flag, label, present, False, superseded)

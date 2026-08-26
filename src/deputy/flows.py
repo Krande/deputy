@@ -52,7 +52,11 @@ def pr_review(
 
     ``default_label`` is the release-* label applied when the PR carries none —
     the repo's configured default (``[pr_review].default_label``), falling back
-    to ``release-skip``.
+    to ``release-skip``. Because it is only a stand-in, deputy also *removes* it
+    again once an explicit release-* label appears alongside it: two release-*
+    labels mean no release is cut at all, so leaving its own default behind is
+    how deputy would quietly suppress the release it exists to arrange. Two
+    explicit labels are left alone and still fail the check.
 
     Returns 0 when the checks pass, 1 when they fail (so the workflow step goes red).
     """
@@ -74,6 +78,20 @@ def pr_review(
         labels.append(default_label)
 
     decision = decide_bump(labels, default_label)
+
+    # Take that default back off again once an explicit label supersedes it.
+    # The default is a fallback: the moment someone states a choice, deputy's
+    # stand-in has to go, or the PR carries two release-* labels and releases
+    # nothing at all. Removing it here is what makes "just add the label I
+    # actually want" work, including after a remove-and-re-add of the real label
+    # (which re-triggers the review with no labels at all, so the default comes
+    # straight back). Only ever the repo's own default, never a second explicit
+    # label.
+    superseded = decision.superseded_default
+    if superseded is not None and superseded in labels:
+        client.remove_label(pr.number, superseded)
+        labels.remove(superseded)
+
     checks = PrChecks(
         title_ok=title_ok(pr.title),
         label_ok=not decision.multiple,
@@ -82,7 +100,12 @@ def pr_review(
 
     seed_fn(pr.title)
     version_line = version_line_fn(decision)
-    body = marker + "\n" + render_body(checks, version_line)
+    note = (
+        f"Removed the default `{superseded}` label — `{decision.label}` supersedes it."
+        if superseded is not None
+        else None
+    )
+    body = marker + "\n" + render_body(checks, version_line, note=note)
 
     if SILENCE_LABEL not in labels:
         upsert_sticky_comment(client, pr.number, marker, body)
@@ -103,6 +126,10 @@ def tag_on_merge(
 
     A PR with no release-* label (pr-review never ran, or the label was removed)
     falls back to the same configured ``default_label`` the review flow applies.
+    A PR that merged still carrying the default *next to* an explicit label
+    releases at the explicit label's level: the same supersession rule the review
+    flow applies, repeated here so a PR that merged before the review could tidy
+    it up still releases instead of silently doing nothing.
 
     ``version_json`` are ``[release].version_json`` paths — JSON files (npm
     ``package.json`` / ``package-lock.json``) whose own version deputy writes
