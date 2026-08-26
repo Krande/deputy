@@ -2,6 +2,13 @@
 
 
 
+## v0.5.3 (2026-08-26)
+
+### Fix
+
+* fix(labels): let an explicit release label supersede deputy&#39;s default (#11) ([`441258b`](https://github.com/Krande/deputy/commit/441258b68ba064d98bbd238a7bfd872ec39237e5))
+
+
 ## v0.5.2 (2026-08-25)
 
 ### Fix
