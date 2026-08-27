@@ -3,8 +3,17 @@ from deputy.flows import pr_review, tag_on_merge
 from fakes import FakeGitHubClient, OutputRecorder, pr_event
 
 
-def run_review(event, *, has_source_key=True, version_line=" * (version line)", **kwargs):
-    client = FakeGitHubClient()
+def run_review(
+    event, *, has_source_key=True, version_line=" * (version line)", client=None, **kwargs
+):
+    # By default the live labels agree with the payload, which is the ordinary
+    # case: the PR was labelled before the event fired. A test that needs the two
+    # to DISAGREE — a label applied afterwards — passes its own client with
+    # `client.labels` already set, and this leaves it alone.
+    if client is None:
+        client = FakeGitHubClient()
+        pr = event["pull_request"]
+        client.labels[pr["number"]] = [label["name"] for label in pr["labels"]]
     out = OutputRecorder()
     rc = pr_review(
         event,
@@ -130,6 +139,7 @@ def test_pr_review_default_label_reaches_the_bump_decision():
 def test_pr_review_explicit_skip_under_an_auto_default_does_not_release():
     seen = []
     client = FakeGitHubClient()
+    client.labels[7] = ["release-skip"]  # live state agrees with the payload
     pr_review(
         pr_event(title="feat: x", labels=["release-skip"]),
         client,
@@ -143,6 +153,60 @@ def test_pr_review_explicit_skip_under_an_auto_default_does_not_release():
     assert client.added_labels == []  # the PR already carries a release-* label
     assert decision.label == "release-skip"
     assert decision.release is False
+
+
+def test_pr_review_sees_a_label_added_after_the_event_fired():
+    """A label applied seconds after `opened` still counts.
+
+    The real sequence, from asa-weld-gen#72: PR opened at 06:09:22 with no
+    labels, `release-patch` applied at 06:09:48, deputy wrote `release-auto` at
+    06:10:05 off the payload it had been handed at open time. The PR ended up
+    with two release-* labels, which releases nothing — the precise outcome the
+    default label exists to avoid.
+
+    So the payload here says no labels, exactly as it did then, and the live
+    state says `release-patch`.
+    """
+    seen = []
+    client = FakeGitHubClient()
+    client.labels[7] = ["release-patch"]
+    pr_review(
+        pr_event(title="fix: x", labels=[]),
+        client,
+        has_source_key=True,
+        default_label="release-auto",
+        version_line_fn=lambda d: seen.append(d) or " * v",
+        seed_fn=lambda t: None,
+        set_output_fn=OutputRecorder(),
+    )
+    (decision,) = seen
+    assert client.added_labels == []  # no default: the PR is already labelled
+    assert client.labels[7] == ["release-patch"]  # and nothing was piled on top
+    assert decision.label == "release-patch"
+    assert decision.multiple is False
+
+
+def test_pr_review_falls_back_to_the_payload_when_the_label_read_fails():
+    """A failed live read degrades to the old behaviour rather than going red."""
+
+    class NoListing(FakeGitHubClient):
+        def list_labels(self, issue: int) -> list[str]:
+            raise RuntimeError("502 from the labels endpoint")
+
+    seen = []
+    client = NoListing()
+    rc = pr_review(
+        pr_event(title="feat: x", labels=["release-minor"]),
+        client,
+        has_source_key=True,
+        version_line_fn=lambda d: seen.append(d) or " * v",
+        seed_fn=lambda t: None,
+        set_output_fn=OutputRecorder(),
+    )
+    (decision,) = seen
+    assert rc == 0
+    assert client.added_labels == []  # the payload's label was enough
+    assert decision.label == "release-minor"
 
 
 def test_tag_on_merge_uses_the_configured_default_when_no_label_is_present():

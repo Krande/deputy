@@ -65,7 +65,25 @@ def pr_review(
     set_output_fn = set_output_fn or _set_output
 
     pr = parse_pull_request(event)
-    labels = list(pr.labels)
+
+    # Labels come from the API, not from the event payload.
+    #
+    # The payload's label list is a snapshot frozen when the event fired, so a
+    # label applied in the seconds afterwards can never appear in it, however
+    # long this job takes to start. That is not a rare race — opening a PR and
+    # then labelling it is the ordinary shape of `gh pr create` followed by
+    # `gh pr edit --add-label`, and of every UI flow where the label is chosen
+    # after the PR exists. Deputy would read "no release-* label", add its
+    # default, and leave the PR carrying two of them: which releases nothing at
+    # all, the exact outcome the default exists to prevent.
+    #
+    # Falling back to the payload keeps a transient API failure from turning a
+    # review red. It is never worse than the old behaviour, which used the stale
+    # list unconditionally.
+    try:
+        labels = list(client.list_labels(pr.number))
+    except Exception:  # any read failure degrades to the payload
+        labels = list(pr.labels)
 
     if ensure_labels:
         for name, color in LABEL_PALETTE.items():
