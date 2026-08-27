@@ -2,6 +2,13 @@
 
 
 
+## v0.5.4 (2026-08-27)
+
+### Fix
+
+* fix: read PR labels from the API, not the event payload (#12) ([`f2c7990`](https://github.com/Krande/deputy/commit/f2c7990d497ee32d6d1314ee889ef6d9ded221df))
+
+
 ## v0.5.3 (2026-08-26)
 
 ### Fix
