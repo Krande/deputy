@@ -43,6 +43,14 @@ class FakeGitHubClient:
     def ensure_label(self, name: str, color: str) -> None:
         self.ensured_labels.append((name, color))
 
+    def list_labels(self, issue: int) -> list[str]:
+        """The live label state, which a test may set independently of the payload.
+
+        Divergence between the two is the point: it is what reproduces a label
+        applied in the seconds after the event fired.
+        """
+        return list(self.labels.get(issue, []))
+
     def add_labels(self, issue: int, labels: list[str]) -> None:
         self.added_labels.extend(labels)
         current = self.labels.setdefault(issue, [])

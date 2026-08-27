@@ -38,6 +38,7 @@ class GitHubClient(Protocol):
     def create_comment(self, issue: int, body: str) -> Comment: ...
     def update_comment(self, comment_id: int, body: str) -> None: ...
     def ensure_label(self, name: str, color: str) -> None: ...
+    def list_labels(self, issue: int) -> list[str]: ...
     def add_labels(self, issue: int, labels: list[str]) -> None: ...
     def remove_label(self, issue: int, name: str) -> None: ...
     # release-watch: query an upstream repo, find/open a bump PR on this repo.
@@ -99,6 +100,17 @@ class RestGitHubClient:
                 self._request("PATCH", f"/labels/{name}", {"color": color})
             else:
                 raise
+
+    def list_labels(self, issue: int) -> list[str]:
+        """The labels on an issue/PR *right now*.
+
+        Deliberately a live read. The webhook payload also carries a label list,
+        but it is a snapshot taken when the event fired — so a label added in the
+        seconds afterwards can never appear in it, however long the job takes to
+        start. See ``flows.pr_review``.
+        """
+        data = self._request("GET", f"/issues/{issue}/labels?per_page=100")
+        return [item["name"] for item in (data or [])]
 
     def add_labels(self, issue: int, labels: list[str]) -> None:
         self._request("POST", f"/issues/{issue}/labels", {"labels": labels})
