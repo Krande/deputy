@@ -2,6 +2,15 @@
 
 
 
+## v0.5.5 (2026-08-30)
+
+### Fix
+
+* fix(release-watch): a rejected push must stop the run, not become a 422 (#13)
+
+Co-authored-by: Claude Opus 5 (1M context) &lt;noreply@anthropic.com&gt; ([`5569650`](https://github.com/Krande/deputy/commit/5569650edb4265401c86de3f72b0b2caf26ca2fc))
+
+
 ## v0.5.4 (2026-08-27)
 
 ### Fix
