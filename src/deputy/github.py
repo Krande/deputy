@@ -6,6 +6,7 @@ logic is written against the protocol and is fully unit-testable.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import urllib.error
 import urllib.parse
@@ -31,6 +32,15 @@ class PullRequest:
     head: str
     title: str
     body: str
+
+
+class GitHubError(RuntimeError):
+    """An API call failed, carrying GitHub's own explanation.
+
+    A bare `HTTPError` gives a status line and a stack inside urllib. The 422
+    that motivated this says "No commits between main and <branch>" in its
+    BODY, which names the real fault -- so the body travels with the error.
+    """
 
 
 class GitHubClient(Protocol):
@@ -68,8 +78,24 @@ class RestGitHubClient:
         req.add_header("X-GitHub-Api-Version", "2022-11-28")
         if data is not None:
             req.add_header("Content-Type", "application/json")
-        with urllib.request.urlopen(req) as resp:
-            raw = resp.read()
+        try:
+            with urllib.request.urlopen(req) as resp:
+                raw = resp.read()
+        except urllib.error.HTTPError as exc:
+            # GitHub says WHY in the body, and a bare HTTPError throws it away.
+            # A 422 from create_pull_request is "No commits between main and
+            # <branch>" or "head sha can't be blank" -- both of which name the
+            # real problem (the branch never reached the remote), where the
+            # status line alone sends the reader to urllib's stack instead.
+            detail = ""
+            # The body is a courtesy, not the error. If it cannot be read the
+            # status line still has to get out.
+            with contextlib.suppress(Exception):
+                detail = (exc.read() or b"").decode("utf-8", "replace").strip()
+            raise GitHubError(
+                f"{method} {url} failed: HTTP {exc.code} {exc.reason}"
+                + (f" -- {detail}" if detail else "")
+            ) from exc
         return json.loads(raw) if raw else None
 
     def list_comments(self, issue: int) -> list[Comment]:
