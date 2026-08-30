@@ -63,9 +63,13 @@ def test_the_lease_is_given_something_to_compare_against():
     runner = RecordingRunner()
     commit_to_branch("/repo", "deputy/release-watch/x", ["f.yaml"], "msg", runner=runner)
     fetch = next(c for c in runner.calls if "fetch" in c)
-    assert fetch[-1] == "+refs/heads/deputy/release-watch/x:refs/remotes/origin/deputy/release-watch/x"
+    assert (
+        fetch[-1] == "+refs/heads/deputy/release-watch/x:refs/remotes/origin/deputy/release-watch/x"
+    )
     # And it happens BEFORE the push, or it has answered nothing.
-    assert runner.calls.index(fetch) < runner.calls.index(next(c for c in runner.calls if "push" in c))
+    assert runner.calls.index(fetch) < runner.calls.index(
+        next(c for c in runner.calls if "push" in c)
+    )
 
 
 def test_a_first_run_survives_having_no_branch_to_fetch():

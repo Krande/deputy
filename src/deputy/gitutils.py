@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import subprocess
 from collections.abc import Callable, Sequence
 
@@ -111,10 +112,17 @@ def commit_to_branch(
     #
     # Tolerated rather than checked: a first run has no such branch, and "the
     # remote does not have it" is the normal answer, not a failure.
-    try:
-        runner(["git", "-C", cwd, "fetch", "origin", f"+refs/heads/{branch}:refs/remotes/origin/{branch}"])
-    except subprocess.CalledProcessError:
-        pass
+    with contextlib.suppress(subprocess.CalledProcessError):
+        runner(
+            [
+                "git",
+                "-C",
+                cwd,
+                "fetch",
+                "origin",
+                f"+refs/heads/{branch}:refs/remotes/origin/{branch}",
+            ]
+        )
     runner(["git", "-C", cwd, "checkout", "-B", branch])
     runner(["git", "-C", cwd, "add", *paths])
     if _nothing_staged(cwd, runner):

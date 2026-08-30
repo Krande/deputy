@@ -6,6 +6,7 @@ logic is written against the protocol and is fully unit-testable.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import urllib.error
 import urllib.request
@@ -30,6 +31,15 @@ class PullRequest:
     head: str
     title: str
     body: str
+
+
+class GitHubError(RuntimeError):
+    """An API call failed, carrying GitHub's own explanation.
+
+    A bare `HTTPError` gives a status line and a stack inside urllib. The 422
+    that motivated this says "No commits between main and <branch>" in its
+    BODY, which names the real fault -- so the body travels with the error.
+    """
 
 
 class GitHubClient(Protocol):
@@ -75,10 +85,10 @@ class RestGitHubClient:
             # real problem (the branch never reached the remote), where the
             # status line alone sends the reader to urllib's stack instead.
             detail = ""
-            try:
+            # The body is a courtesy, not the error. If it cannot be read the
+            # status line still has to get out.
+            with contextlib.suppress(Exception):
                 detail = (exc.read() or b"").decode("utf-8", "replace").strip()
-            except Exception:  # noqa: BLE001 - the original error is what matters
-                pass
             raise GitHubError(
                 f"{method} {url} failed: HTTP {exc.code} {exc.reason}"
                 + (f" -- {detail}" if detail else "")
