@@ -65,8 +65,24 @@ class RestGitHubClient:
         req.add_header("X-GitHub-Api-Version", "2022-11-28")
         if data is not None:
             req.add_header("Content-Type", "application/json")
-        with urllib.request.urlopen(req) as resp:
-            raw = resp.read()
+        try:
+            with urllib.request.urlopen(req) as resp:
+                raw = resp.read()
+        except urllib.error.HTTPError as exc:
+            # GitHub says WHY in the body, and a bare HTTPError throws it away.
+            # A 422 from create_pull_request is "No commits between main and
+            # <branch>" or "head sha can't be blank" -- both of which name the
+            # real problem (the branch never reached the remote), where the
+            # status line alone sends the reader to urllib's stack instead.
+            detail = ""
+            try:
+                detail = (exc.read() or b"").decode("utf-8", "replace").strip()
+            except Exception:  # noqa: BLE001 - the original error is what matters
+                pass
+            raise GitHubError(
+                f"{method} {url} failed: HTTP {exc.code} {exc.reason}"
+                + (f" -- {detail}" if detail else "")
+            ) from exc
         return json.loads(raw) if raw else None
 
     def list_comments(self, issue: int) -> list[Comment]:
