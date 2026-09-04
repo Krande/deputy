@@ -2,6 +2,15 @@
 
 
 
+## v0.5.6 (2026-09-04)
+
+### Fix
+
+* fix: ensure_label/remove_label caught an exception _request never raises (#14)
+
+Co-authored-by: Claude Opus 5 (1M context) &lt;noreply@anthropic.com&gt; ([`dabac68`](https://github.com/Krande/deputy/commit/dabac68d1a3d805884bea598e0d10ead6a1f2ccd))
+
+
 ## v0.5.5 (2026-08-30)
 
 ### Fix
