@@ -1,5 +1,3 @@
-import urllib.error
-
 import pytest
 
 from deputy.github import GitHubError, RestGitHubClient, upsert_sticky_comment

@@ -136,9 +136,7 @@ class RestGitHubClient:
             # GitHubError, so catching the former never fired and the first repo
             # that already had these labels failed every single PR review.
             if exc.status == 422:  # already exists — refresh its colour
-                self._request(
-                    "PATCH", f"/labels/{urllib.parse.quote(name)}", {"color": color}
-                )
+                self._request("PATCH", f"/labels/{urllib.parse.quote(name)}", {"color": color})
             else:
                 raise
 
