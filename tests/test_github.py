@@ -2,7 +2,7 @@ import urllib.error
 
 import pytest
 
-from deputy.github import RestGitHubClient, upsert_sticky_comment
+from deputy.github import GitHubError, RestGitHubClient, upsert_sticky_comment
 from fakes import FakeGitHubClient
 
 MARK = "<!-- MARK -->"
@@ -34,14 +34,20 @@ def test_ignores_unrelated_comments():
 # -- REST adapter: label removal -----------------------------------------------
 
 
-def _stub_client(error: urllib.error.HTTPError | None = None):
-    """A RestGitHubClient whose _request records calls instead of making them."""
+def _stub_client(error: GitHubError | None = None):
+    """A RestGitHubClient whose _request records calls instead of making them.
+
+    `error` is raised by the FIRST request only. Recovery paths issue a second
+    request that has to be allowed to succeed — ensure_label answers a 422 by
+    PATCHing the colour — and a stub that raised on every call cannot model one.
+    """
     client = RestGitHubClient("tok", "owner/repo")
     calls: list[tuple[str, str]] = []
 
     def fake_request(method, path, body=None, repo=None):
+        first = not calls
         calls.append((method, path))
-        if error is not None:
+        if error is not None and first:
             raise error
         return None
 
@@ -49,8 +55,15 @@ def _stub_client(error: urllib.error.HTTPError | None = None):
     return client, calls
 
 
-def _http_error(code: int) -> urllib.error.HTTPError:
-    return urllib.error.HTTPError("u", code, "msg", {}, None)  # type: ignore[arg-type]
+def _http_error(code: int) -> GitHubError:
+    """What _request ACTUALLY raises.
+
+    This used to build a bare urllib.error.HTTPError, which _request never lets
+    escape — it wraps every one into a GitHubError. So the doubles raised a type
+    the production handlers caught but production could not produce, and the
+    tolerate-404 / tolerate-422 paths passed here while being dead in the field.
+    """
+    return GitHubError(f"stub failed: HTTP {code}", status=code)
 
 
 def test_remove_label_deletes_the_named_label():
@@ -67,5 +80,40 @@ def test_remove_label_tolerates_a_label_that_is_already_gone():
 
 def test_remove_label_still_raises_on_a_real_failure():
     client, _calls = _stub_client(_http_error(403))
-    with pytest.raises(urllib.error.HTTPError):
+    with pytest.raises(GitHubError):
         client.remove_label(7, "release-auto")
+
+
+# -- REST adapter: label creation ----------------------------------------------
+
+
+def test_ensure_label_creates_a_missing_label():
+    client, calls = _stub_client()
+    client.ensure_label("release-auto", "ffff00")
+    assert calls == [("POST", "/labels")]
+
+
+def test_ensure_label_refreshes_the_colour_when_it_already_exists():
+    # The regression that mattered: every repo that already carried the
+    # release-* labels got HTTP 422 already_exists and failed EVERY pr-review.
+    client, calls = _stub_client(_http_error(422))
+    client.ensure_label("release-auto", "ffff00")
+    assert calls[0] == ("POST", "/labels")
+    assert calls[1] == ("PATCH", "/labels/release-auto")
+
+
+def test_ensure_label_quotes_the_name_in_the_patch_path():
+    client, calls = _stub_client(_http_error(422))
+    client.ensure_label("needs triage", "ffff00")
+    assert calls[1] == ("PATCH", "/labels/needs%20triage")
+
+
+def test_ensure_label_still_raises_on_a_real_failure():
+    client, _calls = _stub_client(_http_error(403))
+    with pytest.raises(GitHubError):
+        client.ensure_label("release-auto", "ffff00")
+
+
+def test_github_error_status_is_none_when_unset():
+    # Callers branch on .status; a plain raise must not look like a 404/422.
+    assert GitHubError("boom").status is None
