@@ -40,7 +40,16 @@ class GitHubError(RuntimeError):
     A bare `HTTPError` gives a status line and a stack inside urllib. The 422
     that motivated this says "No commits between main and <branch>" in its
     BODY, which names the real fault -- so the body travels with the error.
+
+    `status` carries the HTTP code so callers can tell an expected outcome from
+    a real failure. Without it they cannot: _request turns every HTTPError into
+    a GitHubError, so an `except urllib.error.HTTPError` in a caller is dead
+    code that never runs.
     """
+
+    def __init__(self, message: str, *, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 class GitHubClient(Protocol):
@@ -94,7 +103,8 @@ class RestGitHubClient:
                 detail = (exc.read() or b"").decode("utf-8", "replace").strip()
             raise GitHubError(
                 f"{method} {url} failed: HTTP {exc.code} {exc.reason}"
-                + (f" -- {detail}" if detail else "")
+                + (f" -- {detail}" if detail else ""),
+                status=exc.code,
             ) from exc
         return json.loads(raw) if raw else None
 
@@ -121,9 +131,12 @@ class RestGitHubClient:
     def ensure_label(self, name: str, color: str) -> None:
         try:
             self._request("POST", "/labels", {"name": name, "color": color})
-        except urllib.error.HTTPError as exc:
-            if exc.code == 422:  # already exists — refresh its colour
-                self._request("PATCH", f"/labels/{name}", {"color": color})
+        except GitHubError as exc:
+            # NOT urllib.error.HTTPError: _request wraps every HTTPError into a
+            # GitHubError, so catching the former never fired and the first repo
+            # that already had these labels failed every single PR review.
+            if exc.status == 422:  # already exists — refresh its colour
+                self._request("PATCH", f"/labels/{urllib.parse.quote(name)}", {"color": color})
             else:
                 raise
 
@@ -150,8 +163,10 @@ class RestGitHubClient:
         """
         try:
             self._request("DELETE", f"/issues/{issue}/labels/{urllib.parse.quote(name)}")
-        except urllib.error.HTTPError as exc:
-            if exc.code != 404:
+        except GitHubError as exc:
+            # Same dead-handler bug as ensure_label: this caught a type _request
+            # never raises, so the 404 tolerance documented above never applied.
+            if exc.status != 404:
                 raise
 
     def latest_release(self, repo: str) -> Release | None:
