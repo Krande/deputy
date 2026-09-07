@@ -1,6 +1,6 @@
 # deputy
 
-Your repo's CI deputy — PR checks, release tagging, and gitops image bumps as
+My repo's CI deputy — PR checks, release tagging, and gitops image bumps as
 testable Python, not logic buried in Actions YAML. Workflows `pip install`
 deputy and call `deputy <command>`; the logic runs and is tested **locally**
 instead of by pushing commits and reading Actions logs.
