@@ -9,9 +9,11 @@ from deputy.release_watch import (
     find_pinned,
     is_newer,
     normalize_version,
+    oldest_version,
     parse_version,
     pick_latest_tag,
     replace_pinned,
+    target_files,
 )
 
 
@@ -124,3 +126,33 @@ def test_replace_pinned_no_group_replaces_whole_match():
     new_text, count = replace_pinned("v = 1.0.0", r"1\.0\.0", "2.0.0")
     assert count == 1
     assert new_text == "v = 2.0.0"
+
+
+def test_target_files_accepts_either_spelling():
+    assert target_files({"name": "t", "file": "a.txt"}) == ["a.txt"]
+    assert target_files({"name": "t", "files": ["a.txt", "b.txt"]}) == ["a.txt", "b.txt"]
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        {"name": "t"},  # neither key
+        {"name": "t", "file": "a.txt", "files": ["a.txt"]},  # both keys
+        {"name": "t", "files": "a.txt"},  # a string where a list belongs
+        {"name": "t", "files": []},  # empty list
+    ],
+)
+def test_target_files_rejects_malformed_targets(target):
+    with pytest.raises(KeyError):
+        target_files(target)
+
+
+def test_oldest_version_picks_the_lowest_by_semver():
+    assert oldest_version(["1.10.0", "1.9.0"]) == "1.9.0"  # not lexical
+    assert oldest_version(["2.0.0", "2.0.0-rc.1"]) == "2.0.0-rc.1"
+    assert oldest_version(["1.2.3"]) == "1.2.3"
+
+
+def test_oldest_version_raises_on_an_unparseable_pin():
+    with pytest.raises(ValueError):
+        oldest_version(["1.2.3", "latest"])

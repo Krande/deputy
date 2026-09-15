@@ -27,9 +27,11 @@ from .release_watch import (
     find_pinned,
     is_newer,
     normalize_version,
+    oldest_version,
     pick_latest_tag,
     render_pr_body,
     replace_pinned,
+    target_files,
 )
 from .sshkey import key_basename, keygen_argv, resolve_email, unique_path
 from .version import run_release, version_line_for
@@ -284,7 +286,7 @@ def _watch_one(
 ) -> int:
     name = target["name"]
     upstream = target["repo"]
-    file = target["file"]
+    files = target_files(target)
     pattern = target["pattern"]
 
     latest = latest_upstream_version(client, upstream)
@@ -292,13 +294,26 @@ def _watch_one(
         print(f"[{name}] no upstream release or semver tag on {upstream}; skipping")
         return 0
 
-    full = str(pathlib.PurePosixPath(repo_dir) / file)
-    text = reader(full)
-    current = find_pinned(text, pattern)
-    if current is None:
-        print(f"[{name}] pattern did not match anything in {file}; skipping (check the pattern)")
-        return 1
+    # Read every file up front: a pattern that misses one of them is a config
+    # error, and bailing before the first write keeps a multi-file target from
+    # landing a half-done bump.
+    texts: dict[str, str] = {}
+    pinned: list[str] = []
+    for file in files:
+        full = str(pathlib.PurePosixPath(repo_dir) / file)
+        text = reader(full)
+        found = find_pinned(text, pattern)
+        if found is None:
+            print(
+                f"[{name}] pattern did not match anything in {file}; skipping (check the pattern)"
+            )
+            return 1
+        texts[file] = text
+        pinned.append(found)
 
+    # With several files, compare against the oldest pin so a drifted file is
+    # still caught up rather than treated as up to date.
+    current = oldest_version(pinned)
     new_version = normalize_version(latest)
     if not is_newer(new_version, current):
         print(f"[{name}] up to date (pinned {current}, latest {new_version}); nothing to do")
@@ -314,16 +329,17 @@ def _watch_one(
         print(f"[{name}] would bump {current} -> {new_version} on {branch} (dry-run)")
         return 0
 
-    new_text, count = replace_pinned(text, pattern, new_version)
-    writer(full, new_text)
+    for file, was in zip(files, pinned, strict=True):
+        new_text, count = replace_pinned(texts[file], pattern, new_version)
+        writer(str(pathlib.PurePosixPath(repo_dir) / file), new_text)
+        print(f"[{name}] patched {count} pin(s) in {file}: {was} -> {new_version}")
     commit_fn(
         repo_dir,
         branch,
-        [file],
+        list(files),
         f"chore({name}): bump {current} -> {new_version}",
         push=True,
     )
-    print(f"[{name}] patched {count} pin(s) in {file}: {current} -> {new_version}")
 
     existing = client.find_open_pr(branch)
     if existing is not None:

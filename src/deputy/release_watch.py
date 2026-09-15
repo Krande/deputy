@@ -15,6 +15,7 @@ workflow files) without teaching deputy each one's schema.
 
 from __future__ import annotations
 
+import functools
 import re
 
 # Defaults a target may override in deputy.toml.
@@ -123,6 +124,43 @@ def pick_latest_tag(tags: list[str]) -> str | None:
         if best_parsed is None or _cmp_parsed(parsed, best_parsed) > 0:
             best_parsed, best_raw = parsed, tag
     return best_raw
+
+
+def target_files(target: dict) -> list[str]:
+    """Return the files a watch target covers, from ``files`` or ``file``.
+
+    A target may pin the same dependency in more than one file. ``files`` takes
+    a list and bumps them together in one branch, one commit, one PR, so pins
+    that must move in lockstep cannot drift apart across separately-merged PRs.
+    ``file`` remains the single-file spelling, and separate targets remain
+    separate PRs — the way to watch the same upstream in two places that are
+    *meant* to move independently. Giving both keys is a config mistake worth
+    failing on rather than silently honouring one.
+    """
+    listed, single = target.get("files"), target.get("file")
+    if listed is not None and single is not None:
+        raise KeyError(f"release_watch target {target.get('name')!r}: set files or file, not both")
+    if listed is not None:
+        if isinstance(listed, str) or not listed:
+            raise KeyError(
+                f"release_watch target {target.get('name')!r}: files must be a non-empty list"
+            )
+        return list(listed)
+    if single is None:
+        raise KeyError(f"release_watch target {target.get('name')!r}: needs files or file")
+    return [single]
+
+
+def oldest_version(versions: list[str]) -> str:
+    """Return the lowest version by semver precedence.
+
+    Used to pick the ``current`` pin for a multi-file target: if the files have
+    drifted apart (one bumped by hand, one missed), comparing upstream against
+    the *oldest* is what keeps the bump firing until every file has caught up.
+    Raises ``ValueError`` via :func:`compare_versions` on an unparseable pin,
+    the same way the single-file comparison already does.
+    """
+    return min(versions, key=functools.cmp_to_key(compare_versions))
 
 
 def find_pinned(text: str, pattern: str) -> str | None:
