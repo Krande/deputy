@@ -1,0 +1,5 @@
+# pixi rewrites pixi.lock with LF endings on every resolve. With core.autocrlf
+# on (the Windows default) a checkout would hand the working tree CRLF, and the
+# next `pixi` run would flip all ~1600 lines back to LF and show up as a diff
+# nobody made. Pinning the working-tree endings keeps the lock quiet.
+pixi.lock text eol=lf
