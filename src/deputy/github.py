@@ -82,7 +82,10 @@ class RestGitHubClient:
         url = f"{self._api}/repos/{repo or self._repo}{path}"
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(url, data=data, method=method)
-        req.add_header("Authorization", f"Bearer {self._token}")
+        # No token means an anonymous read (e.g. a public upstream's releases).
+        # An empty "Bearer " is not anonymous: GitHub answers it with a 401.
+        if self._token:
+            req.add_header("Authorization", f"Bearer {self._token}")
         req.add_header("Accept", "application/vnd.github+json")
         req.add_header("X-GitHub-Api-Version", "2022-11-28")
         if data is not None:
@@ -173,8 +176,11 @@ class RestGitHubClient:
         """Latest published GitHub Release of ``repo`` (owner/name), or None."""
         try:
             res = self._request("GET", "/releases/latest", repo=repo)
-        except urllib.error.HTTPError as exc:
-            if exc.code == 404:  # no releases published yet
+        except GitHubError as exc:
+            # Same dead-handler bug as ensure_label: catching urllib's HTTPError
+            # never fired, so an upstream with only tags crashed the run instead
+            # of falling back to them.
+            if exc.status == 404:  # no releases published yet
                 return None
             raise
         return Release(res["tag_name"]) if res else None
@@ -194,13 +200,34 @@ class RestGitHubClient:
         return tags
 
     def find_open_pr(self, head: str) -> PullRequest | None:
-        """The open PR whose head branch is ``head`` on this repo, or None."""
+        """The open PR whose head branch is ``head`` on this repo, or None.
+
+        GitHub narrows the list server-side with ``head=owner:branch``. Forgejo and
+        Gitea ignore that filter and return every open PR, and trusting the first
+        result there "updates" whichever unrelated PR happens to be newest. So the
+        head branch (and repo, to skip a fork's same-named branch) is matched here,
+        and the list is paged until empty: a short page does not prove the end,
+        because the server may cap the page below the size asked for.
+        """
         owner = self._repo.split("/")[0]
-        res = self._request("GET", f"/pulls?state=open&head={owner}:{head}&per_page=1")
-        if not res:
-            return None
-        pr = res[0]
-        return PullRequest(pr["number"], head, pr.get("title") or "", pr.get("body") or "")
+        page = 1
+        while True:
+            # per_page is GitHub's page size, limit is Forgejo's; each ignores the other.
+            batch = self._request(
+                "GET",
+                f"/pulls?state=open&head={owner}:{head}&per_page=50&limit=50&page={page}",
+            )
+            if not batch:
+                return None
+            for pr in batch:
+                pr_head = pr.get("head") or {}
+                head_repo = (pr_head.get("repo") or {}).get("full_name")
+                if pr_head.get("ref") != head:
+                    continue
+                if head_repo and head_repo.lower() != self._repo.lower():
+                    continue
+                return PullRequest(pr["number"], head, pr.get("title") or "", pr.get("body") or "")
+            page += 1
 
     def create_pull_request(self, *, head: str, base: str, title: str, body: str) -> PullRequest:
         res = self._request(

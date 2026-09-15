@@ -137,9 +137,62 @@ targets, each with its own `file`, branch and PR — watching one upstream from
 two targets is fine and is how two environments are kept on their own release
 cadence.
 
+**Container images.** For Kubernetes manifests, name the containers instead of
+writing a pattern. deputy then sets each selected container's **whole** `image`
+to `<image>:<release>` — registry, repository and tag — rather than splicing a
+version into whatever was there:
+
+```toml
+[[release_watch]]
+name       = "app"
+repo       = "owner/app"
+image      = "ghcr.io/owner/app"                       # the release image, without a tag
+files      = ["deploy/app.yaml", "deploy/worker.yaml"]
+containers = ["migrate", "api", "worker"]              # container / initContainer names
+```
+
+That matters when a manifest does not always run a release. If a development
+pipeline points a container at `registry.example.com/app:sha-abc1234` in the
+meantime, a pattern written for the release registry no longer matches; an image
+target still finds the container by name. While every selected container runs a
+release of `image`, versions are compared as usual. When any runs something else
+there is no version to compare, so the PR puts it back on the latest release —
+set `on_other_image = "skip"` to leave such containers alone until someone moves
+them back. Containers you do not list (a `wait-for-db` init helper on `busybox`)
+are never touched, and a listed name that matches nothing fails the target before
+anything is written.
+
 Auth is the `GH_TOKEN` env var; `GITHUB_REPOSITORY` (`owner/repo`, provided by
 Actions) names the repo the PRs are opened on. `--dry-run` needs neither a repo
 nor push access.
+
+| Env | Default | Meaning |
+|---|---|---|
+| `GH_TOKEN` | — (required) | Token for the repo the PRs are opened on. |
+| `DEPUTY_API_URL` | `$GITHUB_API_URL`, else `https://api.github.com` | REST base of the forge hosting that repo. |
+| `DEPUTY_UPSTREAM_API_URL` | the PR client | REST base to look upstream releases up on, when that is another forge. |
+| `DEPUTY_UPSTREAM_TOKEN` | anonymous | Token for `DEPUTY_UPSTREAM_API_URL` (public read is enough). |
+
+#### Forgejo / Gitea consumers
+
+The PR side only uses the Gitea-compatible subset of the API, so the consumer
+repo can live on Forgejo while the watched upstreams stay on GitHub. Forgejo
+Actions sets `GITHUB_API_URL` to the instance's `/api/v1`, so only the upstream
+needs naming:
+
+```yaml
+- run: deputy release-watch --all
+  env:
+    GH_TOKEN: ${{ secrets.BOT_TOKEN }}   # a bot account's token, so its PRs notify you
+    GITHUB_REPOSITORY: ${{ github.repository }}
+    DEPUTY_UPSTREAM_API_URL: https://api.github.com
+    DEPUTY_UPSTREAM_TOKEN: ${{ secrets.GITHUB_READ_TOKEN }}
+```
+
+Two Forgejo differences worth knowing: it ignores the `head` filter when listing
+PRs (deputy matches the head branch itself), and adding a label the repo does
+not have is not an auto-create as on GitHub — create the `labels` up front, or
+set `labels = []`.
 
 #### Scheduled workflow (consumer side)
 
@@ -277,8 +330,12 @@ key there would be handed to semantic-release.
 |---|---|---|---|
 | `name` | yes | — | Identifier for the target; used in the branch, commit, PR title, and marker. |
 | `repo` | yes | — | Upstream repo (`owner/name`) queried for the latest release/tag. |
-| `file` | yes | — | Path in **this** repo holding the pinned version. |
-| `pattern` | yes | — | Regex locating the pin; **capture group 1** is the version substring rewritten in place (no group → the whole match is replaced). |
+| `file` / `files` | yes (one of) | — | Path(s) in **this** repo holding the pin; `files` bumps several in one PR. |
+| `pattern` | pattern targets | — | Regex locating the pin; **capture group 1** is the version substring rewritten in place (no group → the whole match is replaced). |
+| `image` | image targets | — | Release image without a tag (`ghcr.io/owner/app`); selected containers are set to `<image>:<tag>`. Mutually exclusive with `pattern`. |
+| `containers` | image targets | — | Names of the containers / initContainers to set, searched in every YAML document of every file. |
+| `tag_template` | no | `{version}` | Image tag written for a release; e.g. `v{version}` when the images keep the `v`. |
+| `on_other_image` | no | `replace` | What to do with a selected container that runs something other than a release of `image`: `replace` it with the latest release, or `skip` the target. |
 | `pr_title` | no | `chore: bump {name} to {version}` | PR title; `{name}` / `{version}` templated. |
 | `branch_prefix` | no | `deputy/release-watch` | Head branch is `<branch_prefix>/<name>`. |
 | `labels` | no | `["dependencies"]` | Labels applied to the opened/updated PR. |

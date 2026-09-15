@@ -11,6 +11,12 @@ replaces only that span, leaving the rest of the line — package name, quotes,
 comparators, comments — untouched. This keeps the mechanism explicit and easy to
 reason about across arbitrary file formats (requirements files, TOML, YAML,
 workflow files) without teaching deputy each one's schema.
+
+Container images get a second, structural style: an ``image`` target selects
+containers by name in YAML manifests and writes the **full** image reference
+(``<image>:<tag>``). Nothing is matched against the old value, so a container
+pointed at another registry in the meantime is put back on the release image
+instead of being missed by a pattern written for the release registry.
 """
 
 from __future__ import annotations
@@ -207,5 +213,75 @@ def render_pr_body(
         f"{marker}\n\n"
         f"Bumps **{name}** from `{current}` to `{new_version}`.\n\n"
         f"Upstream: `{upstream_repo}` — release `{new_version}`.\n\n"
+        f"_Opened automatically by `deputy release-watch`._\n"
+    )
+
+
+# ── image targets ────────────────────────────────────────────────────────────
+# A target with ``image`` selects containers by name in YAML manifests and writes
+# the full image reference, instead of splicing a version into a regex match.
+
+DEFAULT_TAG_TEMPLATE = "{version}"
+DEFAULT_ON_OTHER_IMAGE = "replace"
+ON_OTHER_IMAGE_CHOICES = ("replace", "skip")
+
+
+def split_image_ref(ref: str) -> tuple[str, str | None]:
+    """Split an image reference into ``(repository, tag)``.
+
+    ``registry.example.com:5000/team/app:1.2.3`` ->
+    ``("registry.example.com:5000/team/app", "1.2.3")``. A registry port is not a
+    tag -- the tag's colon comes after the last ``/``. A ``@digest`` suffix is
+    dropped, and a reference without a tag gives ``None``.
+    """
+    name = ref.strip().split("@", 1)[0]
+    colon, slash = name.rfind(":"), name.rfind("/")
+    if colon > slash:
+        return name[:colon], name[colon + 1 :]
+    return name, None
+
+
+def release_pin(image_ref: str, release_image: str) -> str | None:
+    """The version ``image_ref`` pins, when it is ``release_image`` on a version tag.
+
+    ``None`` means the container is not on a release of that image: another
+    repository or registry (a development build, say), or a tag that is not a
+    version, such as ``latest`` or ``sha-abc1234``.
+    """
+    repo, tag = split_image_ref(image_ref)
+    if repo != release_image or tag is None or parse_version(tag) is None:
+        return None
+    return normalize_version(tag)
+
+
+def image_target_containers(target: dict) -> list[str]:
+    """Validate an ``image`` target and return the container names it selects."""
+    name = target.get("name")
+    if target.get("pattern") is not None:
+        raise KeyError(f"release_watch target {name!r}: set image or pattern, not both")
+    containers = target.get("containers")
+    if isinstance(containers, str) or not containers:
+        raise KeyError(
+            f"release_watch target {name!r}: an image target needs a non-empty containers list"
+        )
+    on_other = target.get("on_other_image", DEFAULT_ON_OTHER_IMAGE)
+    if on_other not in ON_OTHER_IMAGE_CHOICES:
+        raise KeyError(
+            f"release_watch target {name!r}: on_other_image must be one of "
+            f"{', '.join(ON_OTHER_IMAGE_CHOICES)}, got {on_other!r}"
+        )
+    return list(containers)
+
+
+def render_image_pr_body(
+    name: str, current: list[str], new_ref: str, upstream_repo: str, marker: str
+) -> str:
+    """Render the image-bump PR body (Markdown), listing what each container ran."""
+    was = "\n".join(f"- {line}" for line in current)
+    return (
+        f"{marker}\n\n"
+        f"Sets **{name}** to `{new_ref}`.\n\n"
+        f"Currently:\n{was}\n\n"
+        f"Upstream: `{upstream_repo}` — latest release.\n\n"
         f"_Opened automatically by `deputy release-watch`._\n"
     )

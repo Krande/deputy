@@ -37,6 +37,30 @@ def _run(client, targets, files, *, dry_run=False):
     return rc, commits
 
 
+def test_upstream_client_looks_up_releases_and_client_opens_the_pr():
+    # PRs on one forge (e.g. Forgejo), releases on another (GitHub).
+    consumer = FakeGitHubClient()
+    upstream = FakeGitHubClient()
+    upstream.releases["owner/some-lib"] = "v1.3.0"
+    files = {"repo/requirements.txt": REQUIREMENTS}
+
+    rc = release_watch(
+        [_target()],
+        consumer,
+        repo_dir="repo",
+        reader=lambda p: files[p],
+        writer=lambda p, text: files.__setitem__(p, text),
+        commit_fn=lambda *a, **k: None,
+        upstream_client=upstream,
+    )
+
+    assert rc == 0
+    assert files["repo/requirements.txt"] == "some-lib==1.3.0\n"
+    # the PR lands on the consumer, nothing on the upstream
+    assert [pr.head for pr in consumer.pulls] == ["deputy/release-watch/some-lib"]
+    assert upstream.pulls == []
+
+
 def test_newer_release_opens_pr_and_bumps_file():
     client = FakeGitHubClient()
     client.releases["owner/some-lib"] = "v1.3.0"

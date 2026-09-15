@@ -15,20 +15,25 @@ from .actions_io import set_output as _set_output
 from .comment import MARKER, render_body
 from .config import fill_template
 from .github import GitHubClient, upsert_sticky_comment
-from .gitops import set_image
+from .gitops import container_images, set_container_images, set_image
 from .gitutils import commit_and_push, commit_to_branch, seed_title_commit
 from .labels import DEFAULT_LABEL, LABEL_PALETTE, SILENCE_LABEL, BumpDecision, decide_bump
 from .pr_checks import PrChecks, title_ok
 from .release_watch import (
     DEFAULT_BRANCH_PREFIX,
     DEFAULT_LABELS,
+    DEFAULT_ON_OTHER_IMAGE,
     DEFAULT_PR_TITLE,
+    DEFAULT_TAG_TEMPLATE,
     MARKER_TEMPLATE,
     find_pinned,
+    image_target_containers,
     is_newer,
     normalize_version,
     oldest_version,
     pick_latest_tag,
+    release_pin,
+    render_image_pr_body,
     render_pr_body,
     replace_pinned,
     target_files,
@@ -242,6 +247,7 @@ def release_watch(
     reader: Callable[[str], str] | None = None,
     writer: Callable[[str, str], None] | None = None,
     commit_fn: Callable[..., None] | None = None,
+    upstream_client: GitHubClient | None = None,
 ) -> int:
     """For each watched target, open/update a PR bumping a pinned dependency.
 
@@ -253,16 +259,22 @@ def release_watch(
     committed, or opened. All I/O is injected so this unit-tests without a repo or
     network. Returns 0 when every target succeeds, 1 if any pattern failed to
     match (so the workflow step goes red on a stale/misconfigured pattern).
+
+    ``client`` opens the PRs on the consumer repo; ``upstream_client`` (default:
+    the same client) looks the upstream releases up. They differ when the two live
+    on different forges -- PRs on a Forgejo gitops repo, releases on GitHub.
     """
     reader = reader or (lambda p: pathlib.Path(p).read_text(encoding="utf-8"))
     writer = writer or (lambda p, text: pathlib.Path(p).write_text(text, encoding="utf-8"))
     commit_fn = commit_fn or commit_to_branch
+    upstream_client = upstream_client or client
 
     rc = 0
     for target in targets:
         rc |= _watch_one(
             target,
             client,
+            upstream_client,
             repo_dir=repo_dir,
             base=base,
             dry_run=dry_run,
@@ -276,6 +288,7 @@ def release_watch(
 def _watch_one(
     target: dict,
     client: GitHubClient,
+    upstream_client: GitHubClient,
     *,
     repo_dir: str,
     base: str,
@@ -284,12 +297,25 @@ def _watch_one(
     writer: Callable[[str, str], None],
     commit_fn: Callable[..., None],
 ) -> int:
+    if target.get("image") is not None:
+        return _watch_image(
+            target,
+            client,
+            upstream_client,
+            repo_dir=repo_dir,
+            base=base,
+            dry_run=dry_run,
+            reader=reader,
+            writer=writer,
+            commit_fn=commit_fn,
+        )
+
     name = target["name"]
     upstream = target["repo"]
     files = target_files(target)
     pattern = target["pattern"]
 
-    latest = latest_upstream_version(client, upstream)
+    latest = latest_upstream_version(upstream_client, upstream)
     if latest is None:
         print(f"[{name}] no upstream release or semver tag on {upstream}; skipping")
         return 0
@@ -340,7 +366,121 @@ def _watch_one(
         f"chore({name}): bump {current} -> {new_version}",
         push=True,
     )
+    _open_or_update_pr(
+        client, name=name, branch=branch, base=base, title=title, body=body, labels=labels
+    )
+    return 0
 
+
+def _watch_image(
+    target: dict,
+    client: GitHubClient,
+    upstream_client: GitHubClient,
+    *,
+    repo_dir: str,
+    base: str,
+    dry_run: bool,
+    reader: Callable[[str], str],
+    writer: Callable[[str, str], None],
+    commit_fn: Callable[..., None],
+) -> int:
+    """release-watch for an ``image`` target: containers by name, full image refs.
+
+    Versions are compared only while every selected container runs a release of
+    ``image``. A container on anything else -- a development build from another
+    registry, a ``latest`` tag -- has no version to compare, so by default the PR
+    puts it back on the latest release; ``on_other_image = "skip"`` leaves it.
+    """
+    name = target["name"]
+    upstream = target["repo"]
+    files = target_files(target)
+    containers = image_target_containers(target)
+    release_image = target["image"]
+
+    latest = latest_upstream_version(upstream_client, upstream)
+    if latest is None:
+        print(f"[{name}] no upstream release or semver tag on {upstream}; skipping")
+        return 0
+
+    # Read every file up front, as the pattern path does: a container that cannot
+    # be found is a config error, and failing before the first write keeps a
+    # multi-file bump whole.
+    texts: dict[str, str] = {}
+    running: list[tuple[str, str, str]] = []  # (file, container, image)
+    for file in files:
+        text = reader(str(pathlib.PurePosixPath(repo_dir) / file))
+        found = container_images(text, containers)
+        if not found:
+            print(
+                f"[{name}] no container named any of {containers} in {file}; "
+                "skipping (check containers)"
+            )
+            return 1
+        texts[file] = text
+        running.extend((file, container, image) for container, image in found)
+    missing = sorted(set(containers) - {container for _, container, _ in running})
+    if missing:
+        print(
+            f"[{name}] container(s) {', '.join(missing)} found in no file; "
+            "skipping (check containers)"
+        )
+        return 1
+
+    new_version = normalize_version(latest)
+    tag = fill_template(target.get("tag_template", DEFAULT_TAG_TEMPLATE), version=new_version)
+    new_ref = f"{release_image}:{tag}"
+    pins = [release_pin(image, release_image) for _, _, image in running]
+    released = [pin for pin in pins if pin is not None]
+    if len(released) < len(pins):
+        others = sorted(
+            {image for (_, _, image), pin in zip(running, pins, strict=True) if not pin}
+        )
+        if target.get("on_other_image", DEFAULT_ON_OTHER_IMAGE) == "skip":
+            print(
+                f"[{name}] running {', '.join(others)}, not a release of {release_image}; "
+                "skipping (on_other_image = skip)"
+            )
+            return 0
+        current = ", ".join(others)
+    else:
+        current = oldest_version(released)
+        if not is_newer(new_version, current):
+            print(f"[{name}] up to date (running {current}, latest {new_version}); nothing to do")
+            return 0
+
+    branch = f"{target.get('branch_prefix', DEFAULT_BRANCH_PREFIX)}/{name}"
+    title = fill_template(target.get("pr_title", DEFAULT_PR_TITLE), name=name, version=new_version)
+    marker = MARKER_TEMPLATE.format(name=name)
+    was = [f"`{file}` {container}: `{image}`" for file, container, image in running]
+    body = render_image_pr_body(name, was, new_ref, upstream, marker)
+    labels = list(target.get("labels", DEFAULT_LABELS))
+
+    if dry_run:
+        print(f"[{name}] would set {new_ref} (running {current}) on {branch} (dry-run)")
+        return 0
+
+    for file in files:
+        new_text, count = set_container_images(texts[file], containers, new_ref)
+        writer(str(pathlib.PurePosixPath(repo_dir) / file), new_text)
+        print(f"[{name}] set {count} container image(s) in {file} to {new_ref}")
+    commit_fn(repo_dir, branch, list(files), f"chore({name}): set image to {new_ref}", push=True)
+    _open_or_update_pr(
+        client, name=name, branch=branch, base=base, title=title, body=body, labels=labels
+    )
+    return 0
+
+
+def _open_or_update_pr(
+    client: GitHubClient,
+    *,
+    name: str,
+    branch: str,
+    base: str,
+    title: str,
+    body: str,
+    labels: list[str],
+) -> None:
+    """Open the target's PR, or update the open one on the same head branch."""
     existing = client.find_open_pr(branch)
     if existing is not None:
         client.update_pull_request(existing.number, title=title, body=body)
@@ -353,7 +493,6 @@ def _watch_one(
 
     if labels:
         client.add_labels(number, labels)
-    return 0
 
 
 def create_sshkey(
