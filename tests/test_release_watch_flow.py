@@ -189,6 +189,79 @@ def test_multiple_targets_mixed_outcomes():
     assert client.pulls[0].head == "deputy/release-watch/lib-a"
 
 
+def test_files_list_bumps_every_file_in_one_commit_and_one_pr():
+    client = FakeGitHubClient()
+    client.releases["owner/some-lib"] = "v1.3.0"
+    files = {"repo/a.txt": REQUIREMENTS, "repo/b.txt": REQUIREMENTS}
+    target = _target(files=["a.txt", "b.txt"])
+    del target["file"]
+
+    rc, commits = _run(client, [target], files)
+
+    assert rc == 0
+    assert files["repo/a.txt"] == "some-lib==1.3.0\n"
+    assert files["repo/b.txt"] == "some-lib==1.3.0\n"
+    # one branch, one commit carrying both paths, one PR
+    assert len(commits) == 1
+    assert commits[0]["paths"] == ["a.txt", "b.txt"]
+    assert commits[0]["message"] == "chore(some-lib): bump 1.2.3 -> 1.3.0"
+    assert len(client.pulls) == 1
+
+
+def test_files_list_compares_against_the_oldest_pin_when_they_drift():
+    client = FakeGitHubClient()
+    client.releases["owner/some-lib"] = "v1.3.0"
+    # b.txt was already bumped by hand; a.txt lags behind
+    files = {"repo/a.txt": "some-lib==1.2.3\n", "repo/b.txt": "some-lib==1.3.0\n"}
+    target = _target(files=["a.txt", "b.txt"])
+    del target["file"]
+
+    rc, commits = _run(client, [target], files)
+
+    assert rc == 0  # the lagging file still gets caught up
+    assert files["repo/a.txt"] == "some-lib==1.3.0\n"
+    assert files["repo/b.txt"] == "some-lib==1.3.0\n"
+    assert commits[0]["message"] == "chore(some-lib): bump 1.2.3 -> 1.3.0"
+
+
+def test_files_list_writes_nothing_when_one_file_misses_the_pattern():
+    client = FakeGitHubClient()
+    client.releases["owner/some-lib"] = "v1.3.0"
+    files = {"repo/a.txt": REQUIREMENTS, "repo/b.txt": "unrelated content\n"}
+    target = _target(files=["a.txt", "b.txt"])
+    del target["file"]
+
+    rc, commits = _run(client, [target], files)
+
+    assert rc == 1
+    assert files["repo/a.txt"] == REQUIREMENTS  # no half-done bump
+    assert commits == []
+    assert client.pulls == []
+
+
+def test_separate_targets_on_one_upstream_still_get_separate_prs():
+    """Two pins of the same upstream that are meant to move independently."""
+    client = FakeGitHubClient()
+    client.releases["owner/some-lib"] = "v1.3.0"
+    files = {"repo/a.txt": REQUIREMENTS, "repo/b.txt": REQUIREMENTS}
+    targets = [
+        _target(name="lib-a", file="a.txt"),
+        _target(name="lib-b", file="b.txt"),
+    ]
+
+    rc, commits = _run(client, targets, files)
+
+    assert rc == 0
+    assert [c["branch"] for c in commits] == [
+        "deputy/release-watch/lib-a",
+        "deputy/release-watch/lib-b",
+    ]
+    assert [p.head for p in client.pulls] == [
+        "deputy/release-watch/lib-a",
+        "deputy/release-watch/lib-b",
+    ]
+
+
 def test_latest_upstream_version_prefers_release_over_tags():
     client = FakeGitHubClient()
     client.releases["owner/some-lib"] = "v1.2.0"

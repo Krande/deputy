@@ -116,6 +116,27 @@ run that finds a still-newer release updates the same PR instead of opening a
 duplicate. Up-to-date targets are no-ops. A pattern that matches nothing fails
 loud (non-zero exit) rather than silently doing nothing.
 
+**One pin in several files.** Where the same pattern has to be bumped across
+more than one file, give the target a `files` list instead of `file`: all of
+them are rewritten, committed and opened as **one** PR, so pins that must move
+in lockstep cannot end up split across PRs that merge at different times. If
+the files have drifted apart, the comparison uses the *oldest* pin, so a file
+left behind is still caught up. A file the pattern misses aborts the target
+before anything is written — no half-done bump.
+
+```toml
+[[release_watch]]
+name    = "some-lib"
+repo    = "owner/some-lib"
+files   = ["deploy/app.yaml", "deploy/worker.yaml"]   # bumped together, one PR
+pattern = 'some-lib:([0-9]+\.[0-9]+\.[0-9]+)'
+```
+
+Pins that are *meant* to move independently stay separate `[[release_watch]]`
+targets, each with its own `file`, branch and PR — watching one upstream from
+two targets is fine and is how two environments are kept on their own release
+cadence.
+
 Auth is the `GH_TOKEN` env var; `GITHUB_REPOSITORY` (`owner/repo`, provided by
 Actions) names the repo the PRs are opened on. `--dry-run` needs neither a repo
 nor push access.
@@ -176,6 +197,7 @@ message    = "chore({name}): deploy {tag}"  # {name}/{tag}/{image}/{kind} templa
 name          = "some-lib"                  # label used in branch/commit/PR text
 repo          = "owner/some-lib"            # upstream repo to query for the latest release
 file          = "requirements.txt"          # file in THIS repo holding the pin
+                                            # (or files = [...] to bump several in one PR)
 pattern       = 'some-lib==([0-9]+\.[0-9]+\.[0-9]+)'  # regex; group 1 = the version to bump
 # optional, with sensible defaults:
 pr_title      = "chore: bump {name} to {version}"     # {name}/{version} templated
