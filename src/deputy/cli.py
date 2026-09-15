@@ -18,7 +18,14 @@ Usage (in a workflow, after installing deputy):
 
 Env used:
     GITHUB_TOKEN        REST auth for comments/labels (pr-review)
-    GH_TOKEN            REST auth for release-watch (upstream lookup + bump PRs)
+    GH_TOKEN            REST auth for release-watch (bump PRs; also the upstream
+                        lookup unless DEPUTY_UPSTREAM_API_URL is set)
+    DEPUTY_API_URL      REST base of the forge hosting the release-watch PRs
+                        (default: GITHUB_API_URL, else https://api.github.com)
+    DEPUTY_UPSTREAM_API_URL  REST base to look upstream releases up on, when that
+                        is another forge than the PRs (e.g. GitHub from Forgejo)
+    DEPUTY_UPSTREAM_TOKEN    token for DEPUTY_UPSTREAM_API_URL (default: anonymous)
+    GITHUB_API_URL      REST base (provided by Actions; Forgejo points it at /api/v1)
     GITHUB_REPOSITORY   "owner/repo" (provided by Actions)
     GITHUB_EVENT_PATH   event payload JSON (provided by Actions)
     HAS_SOURCE_KEY      "true"/"false" — informational SOURCE_KEY presence (pr-review)
@@ -148,7 +155,16 @@ def cmd_release_watch(args: argparse.Namespace) -> int:
     # dry-run just skips the write/commit/PR side. GITHUB_REPOSITORY is only used
     # when actually opening a PR, so it may be absent for a local dry-run.
     consumer_repo = os.environ.get("GITHUB_REPOSITORY", "")
-    client = RestGitHubClient(os.environ["GH_TOKEN"], consumer_repo)
+    client = RestGitHubClient(os.environ["GH_TOKEN"], consumer_repo, api=_consumer_api())
+
+    # Upstream releases may live on another forge than the consumer repo (PRs on
+    # Forgejo, releases on GitHub). Only then is a second client needed; otherwise
+    # the one client serves both, as before.
+    upstream_client = None
+    upstream_api = os.environ.get("DEPUTY_UPSTREAM_API_URL")
+    if upstream_api:
+        upstream_token = os.environ.get("DEPUTY_UPSTREAM_TOKEN", "")
+        upstream_client = RestGitHubClient(upstream_token, consumer_repo, api=upstream_api)
 
     return release_watch(
         targets,
@@ -156,6 +172,21 @@ def cmd_release_watch(args: argparse.Namespace) -> int:
         repo_dir=args.repo_dir or ".",
         base=args.base,
         dry_run=args.dry_run,
+        upstream_client=upstream_client,
+    )
+
+
+def _consumer_api() -> str:
+    """REST base URL of the forge hosting the consumer repo.
+
+    ``DEPUTY_API_URL`` wins; else ``GITHUB_API_URL``, which GitHub Actions sets to
+    its API and Forgejo Actions sets to the instance's ``/api/v1``; else public
+    GitHub.
+    """
+    return (
+        os.environ.get("DEPUTY_API_URL")
+        or os.environ.get("GITHUB_API_URL")
+        or "https://api.github.com"
     )
 
 

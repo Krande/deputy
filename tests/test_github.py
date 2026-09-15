@@ -115,3 +115,105 @@ def test_ensure_label_still_raises_on_a_real_failure():
 def test_github_error_status_is_none_when_unset():
     # Callers branch on .status; a plain raise must not look like a 404/422.
     assert GitHubError("boom").status is None
+
+
+# -- REST adapter: release-watch lookups ---------------------------------------
+
+
+def _pr(number: int, ref: str, repo: str = "owner/repo") -> dict:
+    return {
+        "number": number,
+        "title": f"PR {number}",
+        "body": "",
+        "head": {"ref": ref, "repo": {"full_name": repo}},
+    }
+
+
+def _paged_client(pages: list[list[dict]]):
+    """A client whose _request serves ``pages`` in order, then empty pages."""
+    client = RestGitHubClient("tok", "owner/repo")
+    paths: list[str] = []
+
+    def fake_request(method, path, body=None, repo=None):
+        paths.append(path)
+        return pages[len(paths) - 1] if len(paths) <= len(pages) else []
+
+    client._request = fake_request  # type: ignore[method-assign]
+    return client, paths
+
+
+def test_find_open_pr_matches_the_head_branch_not_the_first_result():
+    # Forgejo ignores head=owner:branch and returns every open PR, newest first.
+    client, _ = _paged_client([[_pr(9, "renovate/foo"), _pr(7, "deputy/release-watch/x")]])
+    pr = client.find_open_pr("deputy/release-watch/x")
+    assert pr is not None and pr.number == 7
+
+
+def test_find_open_pr_pages_past_a_short_page():
+    # A server capping the page below the requested size must not end the search.
+    client, paths = _paged_client([[_pr(9, "renovate/foo")], [_pr(3, "deputy/release-watch/x")]])
+    pr = client.find_open_pr("deputy/release-watch/x")
+    assert pr is not None and pr.number == 3
+    assert "page=2" in paths[1]
+
+
+def test_find_open_pr_ignores_a_forks_same_named_branch():
+    client, _ = _paged_client([[_pr(5, "deputy/release-watch/x", repo="someone/repo")]])
+    assert client.find_open_pr("deputy/release-watch/x") is None
+
+
+def test_find_open_pr_none_when_no_open_prs():
+    client, _ = _paged_client([])
+    assert client.find_open_pr("deputy/release-watch/x") is None
+
+
+def test_latest_release_is_none_when_upstream_has_no_releases():
+    # The flow falls back to tags on None; a 404 used to escape as a crash.
+    client, _ = _stub_client(error=_http_error(404))
+    assert client.latest_release("owner/lib") is None
+
+
+def test_latest_release_still_raises_on_a_real_failure():
+    client, _ = _stub_client(error=_http_error(500))
+    with pytest.raises(GitHubError):
+        client.latest_release("owner/lib")
+
+
+class _FakeResponse:
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc) -> None:
+        return None
+
+
+def _capture_urlopen(monkeypatch) -> list:
+    requests: list = []
+
+    def fake_urlopen(req):
+        requests.append(req)
+        return _FakeResponse(b'{"tag_name": "v1.0.0"}')
+
+    monkeypatch.setattr("deputy.github.urllib.request.urlopen", fake_urlopen)
+    return requests
+
+
+def test_request_uses_the_configured_api_base(monkeypatch):
+    requests = _capture_urlopen(monkeypatch)
+    client = RestGitHubClient("tok", "owner/repo", api="https://git.example.com/api/v1/")
+    client.latest_release("owner/lib")
+    assert requests[0].full_url == "https://git.example.com/api/v1/repos/owner/lib/releases/latest"
+    assert requests[0].get_header("Authorization") == "Bearer tok"
+
+
+def test_request_without_token_sends_no_auth_header(monkeypatch):
+    # An empty "Bearer " is not anonymous: GitHub answers it with a 401.
+    requests = _capture_urlopen(monkeypatch)
+    RestGitHubClient("", "owner/repo").latest_release("owner/lib")
+    assert requests[0].get_header("Authorization") is None

@@ -158,7 +158,7 @@ def test_pr_review_explicit_skip_under_an_auto_default_does_not_release():
 def test_pr_review_sees_a_label_added_after_the_event_fired():
     """A label applied seconds after `opened` still counts.
 
-    The real sequence, from asa-weld-gen#72: PR opened at 06:09:22 with no
+    A real sequence seen on a consuming repo: PR opened at 06:09:22 with no
     labels, `release-patch` applied at 06:09:48, deputy wrote `release-auto` at
     06:10:05 off the payload it had been handed at open time. The PR ended up
     with two release-* labels, which releases nothing — the precise outcome the

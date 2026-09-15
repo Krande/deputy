@@ -392,13 +392,13 @@ docs: scrub company-specific examples from deputy ([`4d1b193`](https://github.co
 * docs: scrub company-specific examples from README/CLI/tests
 
 deputy is a generic, public package, so its examples shouldn&#39;t carry
-company-internal names. Replace the asa-viewer / ablacr.azurecr.io /
-cluster_test paths in the README, the cli.py docstring, and the config/cli
+company-internal names. Replace the internal image names, registry and
+cluster paths in the README, the cli.py docstring, and the config/cli
 tests with neutral placeholders (registry.example.com/web-app, web-app-beta,
 clusters/prod/web-app.yaml, images key &#34;app&#34;).
 
 Behaviour unchanged — only string literals in docs + test fixtures/assertions.
-63 tests pass, ruff clean. (No homelab refs were present.)
+63 tests pass, ruff clean.
 
 Co-Authored-By: Claude Opus 4.8 (1M context) &lt;noreply@anthropic.com&gt;
 Claude-Session: https://claude.ai/code/session_01J3zfaYytWJnEeZrNGo3aup ([`ac94d73`](https://github.com/Krande/deputy/commit/ac94d73da2272478c03af6ada98399e967a1f646))
