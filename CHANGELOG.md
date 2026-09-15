@@ -2,6 +2,13 @@
 
 
 
+## v0.6.0 (2026-09-15)
+
+### Feature
+
+* feat(release-watch): bump one pin across several files in a single PR (#15) ([`095168e`](https://github.com/Krande/deputy/commit/095168ee5b1bd71c7642d8ba893a3a0cfa2b6aaa))
+
+
 ## v0.5.6 (2026-09-04)
 
 ### Fix
