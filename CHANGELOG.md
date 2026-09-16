@@ -2,6 +2,17 @@
 
 
 
+## v0.8.0 (2026-09-16)
+
+### Feature
+
+* feat(labels): default an unlabelled PR to release-auto (#18) ([`84ed676`](https://github.com/Krande/deputy/commit/84ed676fe30aa96e18a5153576e36fb8c5c0053d))
+
+### Fix
+
+* fix(release-watch): branch each target from base, not the previous target (#17) ([`bee9f55`](https://github.com/Krande/deputy/commit/bee9f55b146269882f61980f55c2c93583a3ba9e))
+
+
 ## v0.7.0 (2026-09-15)
 
 ### Feature
