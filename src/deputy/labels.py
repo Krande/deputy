@@ -29,7 +29,16 @@ LABEL_PALETTE: dict[str, str] = {
 SILENCE_LABEL = "silence-bot"
 # Built-in fallback when a repo configures nothing. Overridable per-repo via
 # deputy.toml's [pr_review].default_label (see config.resolve_default_label).
-DEFAULT_LABEL = "release-skip"
+#
+# "release-auto", not "release-skip": forgetting the label is far more common
+# than wanting a merge to release nothing, and the two mistakes are not
+# symmetric. A forgotten label under a skip default is silent -- the PR merges,
+# no tag is cut, and the omission surfaces later as "why is the fix not in any
+# release?". Under an auto default the same forgotten label releases at the
+# level the commit history implies, which is what a conventional-commit repo
+# already encodes. Not releasing stays available and explicit: label the PR
+# release-skip.
+DEFAULT_LABEL = "release-auto"
 
 
 @dataclass(frozen=True)
@@ -57,7 +66,7 @@ def decide_bump(labels: list[str], default_label: str = DEFAULT_LABEL) -> BumpDe
 
     A missing release label falls back to ``default_label`` — the repo's
     configured default (``[pr_review].default_label``), which the review flow
-    also applies to the PR — defaulting to ``release-skip``. More than one
+    also applies to the PR — defaulting to ``release-auto``. More than one
     release-* label is invalid.
 
     Whether to release is decided by the label's *flag*, not by comparing the

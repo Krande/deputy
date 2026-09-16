@@ -93,15 +93,16 @@ def resolve_default_label(cfg: dict) -> str:
     """The release-* label applied when a PR carries none.
 
     Layers, most-specific first: ``$DEPUTY_DEFAULT_LABEL`` -> deputy.toml's
-    ``[pr_review].default_label`` -> the built-in ``release-skip``. Empty values
+    ``[pr_review].default_label`` -> the built-in ``release-auto``. Empty values
     count as unset (an unset Actions expression renders as "").
 
     The key lives under ``[pr_review]``, not ``[release]``: the latter is
     deep-merged into the generated semantic-release config, so a deputy-only key
     there would leak into semantic-release's own config file.
 
-    Raises ``ValueError`` on an unrecognised label — silently falling back to
-    ``release-skip`` would let a repo believe it is auto-releasing when it is not.
+    Raises ``ValueError`` on an unrecognised label — silently falling back to the
+    built-in would leave a repo that mistyped ``release-skip`` releasing on every
+    merge, believing it had opted out.
     """
     env = os.environ.get(DEFAULT_LABEL_ENV)
     configured = cfg.get("pr_review", {}).get("default_label")

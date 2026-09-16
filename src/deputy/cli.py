@@ -31,7 +31,7 @@ Env used:
     HAS_SOURCE_KEY      "true"/"false" — informational SOURCE_KEY presence (pr-review)
     DEPUTY_TOML         path to deputy.toml (default: ./deputy.toml)
     DEPUTY_MARKER       override the sticky-comment marker
-    DEPUTY_DEFAULT_LABEL  override [pr_review].default_label (release-skip by default)
+    DEPUTY_DEFAULT_LABEL  override [pr_review].default_label (release-auto by default)
     DEPUTY_CONFIG       use an existing semantic-release config file as-is
                         (back-compat; otherwise deputy renders one from [release])
 """

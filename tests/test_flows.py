@@ -35,9 +35,9 @@ def test_pr_review_happy_path_posts_sticky_and_passes():
     assert client.comments[0].body.startswith(MARKER)
 
 
-def test_pr_review_defaults_missing_label_to_skip():
+def test_pr_review_defaults_missing_label_to_auto():
     rc, client, out = run_review(pr_event(title="feat: x", labels=[]))
-    assert "release-skip" in client.added_labels
+    assert "release-auto" in client.added_labels
     assert out.values["review_ok"] == "true"
     assert rc == 0
 
@@ -220,14 +220,20 @@ def test_tag_on_merge_uses_the_configured_default_when_no_label_is_present():
     assert calls == [""]  # released, letting semantic-release derive the bump
 
 
-def test_tag_on_merge_unconfigured_still_defaults_to_skip():
+def test_tag_on_merge_unconfigured_releases_on_the_builtin_default():
+    """A PR that merged with no release-* label at all still cuts a release.
+
+    This is the case the built-in exists for: pr-review never ran, or the label
+    was removed before the merge. Under the old skip default that merge was
+    silently release-less.
+    """
     calls = []
     rc = tag_on_merge(
         pr_event(merged=True, labels=[]),
         release_fn=lambda flag: (calls.append(flag), 0)[1],
     )
     assert rc == 0
-    assert calls == []
+    assert calls == [""]  # released, letting semantic-release derive the bump
 
 
 def test_tag_on_merge_explicit_skip_wins_over_an_auto_default():
