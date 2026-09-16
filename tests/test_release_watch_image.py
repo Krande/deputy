@@ -232,8 +232,8 @@ def _run(target, files, *, release="v1.3.0", dry_run=False):
         dry_run=dry_run,
         reader=lambda p: files[p],
         writer=lambda p, text: files.__setitem__(p, text),
-        commit_fn=lambda cwd, branch, paths, message, push: commits.append(
-            {"branch": branch, "paths": list(paths), "message": message}
+        commit_fn=lambda cwd, branch, paths, message, base, push: commits.append(
+            {"branch": branch, "paths": list(paths), "message": message, "base": base}
         ),
     )
     return rc, client, commits
@@ -261,6 +261,9 @@ def test_new_release_sets_every_selected_container_including_a_dev_build():
             "branch": "deputy/release-watch/app",
             "paths": ["deploy/api.yaml", "deploy/worker.yaml"],
             "message": "chore(app): set image to ghcr.io/example/app:1.3.0",
+            # An image target branches from base too, not from whatever the
+            # previous target of the same run left the checkout on.
+            "base": "main",
         }
     ]
     (pr,) = client.pulls

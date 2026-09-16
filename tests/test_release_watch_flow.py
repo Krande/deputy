@@ -30,8 +30,15 @@ def _run(client, targets, files, *, dry_run=False):
         dry_run=dry_run,
         reader=lambda p: files[p],
         writer=lambda p, text: files.__setitem__(p, text),
-        commit_fn=lambda cwd, branch, paths, message, push: commits.append(
-            {"cwd": cwd, "branch": branch, "paths": list(paths), "message": message, "push": push}
+        commit_fn=lambda cwd, branch, paths, message, base, push: commits.append(
+            {
+                "cwd": cwd,
+                "branch": branch,
+                "paths": list(paths),
+                "message": message,
+                "base": base,
+                "push": push,
+            }
         ),
     )
     return rc, commits
@@ -77,6 +84,7 @@ def test_newer_release_opens_pr_and_bumps_file():
             "branch": "deputy/release-watch/some-lib",
             "paths": ["requirements.txt"],
             "message": "chore(some-lib): bump 1.2.3 -> 1.3.0",
+            "base": "main",
             "push": True,
         }
     ]
@@ -87,6 +95,40 @@ def test_newer_release_opens_pr_and_bumps_file():
     assert pr.title == "chore: bump some-lib to 1.3.0"
     assert "1.2.3" in pr.body and "1.3.0" in pr.body
     assert client.added_labels == ["dependencies"]
+
+
+def test_every_target_in_a_run_is_committed_against_base():
+    """Two bumps in one run must stay two independent PRs.
+
+    Each target's branch has to start from `base`. When it started from HEAD
+    instead, the second target of a `--all` run branched off the first one's
+    commit and shipped it inside its own PR.
+    """
+    client = FakeGitHubClient()
+    client.releases["owner/some-lib"] = "v1.3.0"
+    client.releases["owner/other-lib"] = "v2.1.0"
+    files = {
+        "repo/requirements.txt": REQUIREMENTS,
+        "repo/other.txt": "other-lib==2.0.0\n",
+    }
+    other = _target(
+        name="other-lib",
+        repo="owner/other-lib",
+        file="other.txt",
+        pattern=r"other-lib==([0-9]+\.[0-9]+\.[0-9]+)",
+    )
+
+    rc, commits = _run(client, [_target(), other], files)
+
+    assert rc == 0
+    assert [c["branch"] for c in commits] == [
+        "deputy/release-watch/some-lib",
+        "deputy/release-watch/other-lib",
+    ]
+    # Neither one is allowed to build on the other's branch.
+    assert [c["base"] for c in commits] == ["main", "main"]
+    # And each branch carries only its own file.
+    assert [c["paths"] for c in commits] == [["requirements.txt"], ["other.txt"]]
 
 
 def test_up_to_date_is_a_noop():

@@ -88,6 +88,44 @@ def test_the_default_runner_actually_checks():
         run_checked(["python3", "-c", "raise SystemExit(3)"])
 
 
+def test_the_checkout_goes_back_to_base_so_the_next_target_branches_from_base():
+    """The multi-target entanglement bug, in one assertion.
+
+    `checkout -B` branches from wherever HEAD is. HEAD used to be left on the
+    bump branch, so with several watched targets the second one branched off the
+    first one's commit and carried it into its own PR -- a PR titled as one
+    target's bump that also contained an unrelated target's.
+    """
+    runner = RecordingRunner()
+    commit_to_branch(
+        "/repo", "deputy/release-watch/x", ["f.yaml"], "msg", base="main", runner=runner
+    )
+    assert runner.calls[-1] == ["git", "-C", "/repo", "checkout", "main"]
+
+
+def test_the_checkout_goes_back_to_base_even_when_the_push_fails():
+    """A failing target must not poison the next one.
+
+    Without the restore, a push that raises leaves HEAD on the bump branch --
+    exactly the state the next target would then branch from.
+    """
+    runner = RecordingRunner(fail_on="push")
+    with pytest.raises(subprocess.CalledProcessError):
+        commit_to_branch(
+            "/repo", "deputy/release-watch/x", ["f.yaml"], "msg", base="main", runner=runner
+        )
+    assert runner.calls[-1] == ["git", "-C", "/repo", "checkout", "main"]
+
+
+def test_the_restore_uses_the_base_it_was_given():
+    """Not every repo calls it `main`; the flow passes its PR base through."""
+    runner = RecordingRunner()
+    commit_to_branch(
+        "/repo", "deputy/release-watch/x", ["f.yaml"], "msg", base="master", runner=runner
+    )
+    assert runner.calls[-1] == ["git", "-C", "/repo", "checkout", "master"]
+
+
 def test_an_unchanged_file_is_nothing_to_do_rather_than_a_failure():
     """The one case a strict runner must NOT turn into an error.
 
@@ -97,6 +135,10 @@ def test_an_unchanged_file_is_nothing_to_do_rather_than_a_failure():
     that has already landed.
     """
     runner = RecordingRunner(staged=False)
-    commit_to_branch("/repo", "deputy/release-watch/x", ["f.yaml"], "msg", runner=runner)
+    commit_to_branch(
+        "/repo", "deputy/release-watch/x", ["f.yaml"], "msg", base="main", runner=runner
+    )
     assert not runner.ran("commit"), "there was nothing staged to commit"
     assert not runner.ran("push"), "and therefore nothing to push"
+    # Early return or not, the checkout still owes the next target a clean base.
+    assert runner.calls[-1] == ["git", "-C", "/repo", "checkout", "main"]

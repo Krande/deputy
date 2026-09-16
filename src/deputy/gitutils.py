@@ -88,10 +88,12 @@ def commit_to_branch(
     paths: Sequence[str],
     message: str,
     *,
+    base: str = "main",
     push: bool = True,
     runner: Runner = run_checked,
 ) -> None:
-    """Create/reset ``branch``, stage ``paths``, commit, and (optionally) push it.
+    """Create/reset ``branch``, stage ``paths``, commit, (optionally) push it, and
+    return the checkout to ``base``.
 
     Used by the release-watch flow to land a dependency bump on a dedicated,
     per-target branch (one open PR per target). The branch is recreated from the
@@ -100,6 +102,14 @@ def commit_to_branch(
     updates the same throwaway bump branch in place rather than piling commits or
     failing on a non-fast-forward. Push auth comes from the workflow checkout,
     the same way the other flows rely on it.
+
+    Returning to ``base`` at the end is what keeps ``release-watch --all`` from
+    entangling its targets. ``checkout -B`` branches from wherever HEAD happens
+    to be, and HEAD used to be left on the previous target's bump branch -- so
+    the second target of a run branched off the first one's commit and carried it
+    into its own PR. The observed damage: a PR titled as one target's bump also
+    contained an unrelated target's, and merging it landed a bump nobody had
+    reviewed under that title.
     """
     runner(["git", "-C", cwd, "config", "user.email", "deputy-bot@users.noreply.github.com"])
     runner(["git", "-C", cwd, "config", "user.name", "deputy"])
@@ -124,13 +134,19 @@ def commit_to_branch(
             ]
         )
     runner(["git", "-C", cwd, "checkout", "-B", branch])
-    runner(["git", "-C", cwd, "add", *paths])
-    if _nothing_staged(cwd, runner):
-        print(f"nothing to commit on {branch}: the file already holds this value")
-        return
-    runner(["git", "-C", cwd, "commit", "-m", message])
-    if push:
-        runner(["git", "-C", cwd, "push", "--force-with-lease", "-u", "origin", branch])
+    # `finally`, not a trailing call: a failed push must still leave the checkout
+    # on `base`. Otherwise one target's failure would hand the next target a HEAD
+    # on the bump branch -- the very entanglement this restore exists to prevent.
+    try:
+        runner(["git", "-C", cwd, "add", *paths])
+        if _nothing_staged(cwd, runner):
+            print(f"nothing to commit on {branch}: the file already holds this value")
+            return
+        runner(["git", "-C", cwd, "commit", "-m", message])
+        if push:
+            runner(["git", "-C", cwd, "push", "--force-with-lease", "-u", "origin", branch])
+    finally:
+        runner(["git", "-C", cwd, "checkout", base])
 
 
 def stage_paths(
