@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "deputy"
-version = "0.8.0"
+version = "0.8.1"
 description = "Your repo's CI deputy — PR checks, release tagging, and gitops image bumps as testable Python, not logic buried in Actions YAML."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -21,8 +21,8 @@ dependencies = [
     #
     # The failure is quiet, which is why this is pinned rather than left to
     # chance: `deputy pr-review` catches the exception and degrades its sticky
-    # comment to "No release will be issued for these commits" while the job
-    # still reports success. A merge then produces a green tick and no release.
+    # comment to "Could not determine the next version" while the job still
+    # reports success. A merge then produces a green tick and no release.
     #
     # Drop this once PSR guards the attribute, or once its pinned version no
     # longer reads it.

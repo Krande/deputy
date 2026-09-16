@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 
 from .gitutils import stage_paths
 from .jsonversion import JsonVersionUpdate, bump_file
@@ -65,21 +66,50 @@ def _parse_printed_version(stdout: str) -> str | None:
     return last if _VERSION_RE.match(last) else None
 
 
-def next_version_noop(
+@dataclass(frozen=True)
+class NoopVersion:
+    """Best-effort answer to "what would semantic-release cut right now?".
+
+    Three outcomes, kept apart because the PR comment has something different to
+    say about each:
+
+    * ``version`` set — a release is due, at that version.
+    * ``no_release`` — semantic-release reported nothing is due.
+    * neither — no answer at all (semantic-release missing, or unhappy).
+
+    The middle case has to be read off *stderr*: ``version --print`` puts the
+    version on stdout whether or not a release is due, so stdout alone cannot
+    tell "0.8.0 is next" from "0.8.0 is what you already have".
+    """
+
+    version: str | None = None
+    no_release: bool = False
+
+
+def noop_version(
     config_file: str, flag: str | None, runner: Runner = _default_noop_runner
-) -> str | None:
-    """What version would semantic-release cut right now? None if none/unknown.
+) -> NoopVersion:
+    """Ask semantic-release what it would do, without trusting it to be there.
 
     Best-effort on purpose: this feeds an informational line in the PR comment,
-    so a missing or unhappy semantic-release degrades to "no version" rather than
+    so a missing or unhappy semantic-release degrades to "no answer" rather than
     failing the review. Use :func:`planned_version` where the answer must be
     trusted.
     """
     try:
         res = runner(_print_argv(config_file, flag))
     except Exception:
-        return None
-    return _parse_printed_version(getattr(res, "stdout", ""))
+        return NoopVersion()
+    if _NO_RELEASE_MARKER in (getattr(res, "stderr", "") or ""):
+        return NoopVersion(no_release=True)
+    return NoopVersion(version=_parse_printed_version(getattr(res, "stdout", "")))
+
+
+def next_version_noop(
+    config_file: str, flag: str | None, runner: Runner = _default_noop_runner
+) -> str | None:
+    """What version would semantic-release cut right now? None if none/unknown."""
+    return noop_version(config_file, flag, runner).version
 
 
 def planned_version(
@@ -130,13 +160,25 @@ def planned_version(
 def version_line_for(
     decision: BumpDecision, config_file: str, runner: Runner = _default_noop_runner
 ) -> str:
-    """The informational '* … next version …' bullet for the PR comment."""
+    """The informational '* … next version …' bullet for the PR comment.
+
+    A `release-auto` PR whose commits do not bump anything (all `chore:`, say)
+    is a *skip*, and has to be reported as one. It used to print the current
+    version as the "calculated next version" — semantic-release puts that on
+    stdout even when it is refusing to release — which reads like a release is
+    coming and is confusing precisely when it matters.
+    """
     if decision.multiple or not decision.release:
         return " * ✅ Skipping release (release-skip)"
-    ver = next_version_noop(config_file, decision.flag, runner)
-    if ver:
-        return f' * ✅ Calculated next version: "{ver}"'
-    return " * ℹ️ No release will be issued for these commits"
+    report = noop_version(config_file, decision.flag, runner)
+    if report.version:
+        return f' * ✅ Calculated next version: "{report.version}"'
+    if report.no_release:
+        return " * ✅ Skipping release (no releasable commits)"
+    # Neither: semantic-release could not be asked. Say so rather than claim
+    # there is nothing to release — the two look identical from here, and only
+    # one of them is a fact about the PR.
+    return " * ℹ️ Could not determine the next version"
 
 
 def _default_release_runner(cmd: Sequence[str]) -> subprocess.CompletedProcess:
