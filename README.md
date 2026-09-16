@@ -6,7 +6,7 @@ deputy and call `deputy <command>`; the logic runs and is tested **locally**
 instead of by pushing commits and reading Actions logs.
 
 ```sh
-pip install "deputy @ git+https://github.com/Krande/deputy.git@v0.7.0"
+pip install "deputy @ git+https://github.com/Krande/deputy.git@v0.8.1"
 ```
 
 ### Install it as a global CLI
@@ -16,7 +16,7 @@ a [pixi-build](https://pixi.sh/latest/build/) manifest, so one command builds an
 installs it (its runtime deps come from conda-forge):
 
 ```sh
-pixi global install deputy --git https://github.com/Krande/deputy.git --tag v0.7.0
+pixi global install deputy --git https://github.com/Krande/deputy.git --tag v0.8.1
 ```
 
 pixi builds deputy from source under its cache dir during that install. If you'd
@@ -33,7 +33,7 @@ Prefer a prebuilt install with no from-source build? Install it as a
 
 ```sh
 pixi global install uv
-uv tool install "deputy @ git+https://github.com/Krande/deputy.git@v0.7.0"
+uv tool install "deputy @ git+https://github.com/Krande/deputy.git@v0.8.1"
 uv tool update-shell          # one-time: add uv's tool dir to PATH, then reopen the shell
 ```
 
@@ -219,7 +219,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install "deputy @ git+https://github.com/Krande/deputy.git@v0.7.0"
+      - run: pip install "deputy @ git+https://github.com/Krande/deputy.git@v0.8.1"
       - run: deputy release-watch --all
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
