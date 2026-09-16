@@ -263,6 +263,11 @@ def release_watch(
     ``client`` opens the PRs on the consumer repo; ``upstream_client`` (default:
     the same client) looks the upstream releases up. They differ when the two live
     on different forges -- PRs on a Forgejo gitops repo, releases on GitHub.
+
+    Targets are independent: each one's branch starts from ``base``, so a run that
+    bumps several of them produces several single-target PRs that can be reviewed
+    and merged separately. ``commit_fn`` is handed ``base`` and is responsible for
+    leaving the checkout there -- see :func:`deputy.gitutils.commit_to_branch`.
     """
     reader = reader or (lambda p: pathlib.Path(p).read_text(encoding="utf-8"))
     writer = writer or (lambda p, text: pathlib.Path(p).write_text(text, encoding="utf-8"))
@@ -364,6 +369,7 @@ def _watch_one(
         branch,
         list(files),
         f"chore({name}): bump {current} -> {new_version}",
+        base=base,
         push=True,
     )
     _open_or_update_pr(
@@ -463,7 +469,14 @@ def _watch_image(
         new_text, count = set_container_images(texts[file], containers, new_ref)
         writer(str(pathlib.PurePosixPath(repo_dir) / file), new_text)
         print(f"[{name}] set {count} container image(s) in {file} to {new_ref}")
-    commit_fn(repo_dir, branch, list(files), f"chore({name}): set image to {new_ref}", push=True)
+    commit_fn(
+        repo_dir,
+        branch,
+        list(files),
+        f"chore({name}): set image to {new_ref}",
+        base=base,
+        push=True,
+    )
     _open_or_update_pr(
         client, name=name, branch=branch, base=base, title=title, body=body, labels=labels
     )
