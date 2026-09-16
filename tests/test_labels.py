@@ -1,17 +1,26 @@
 from deputy.labels import decide_bump
 
 
-def test_no_labels_defaults_to_skip():
+def test_no_labels_defaults_to_auto():
+    """The built-in default releases rather than silently releasing nothing.
+
+    Forgetting the label is the common mistake, and under a skip default it is
+    a silent one: the PR merges, no tag is cut, and the omission only surfaces
+    when someone goes looking for the release. Auto releases at the level the
+    commit history implies; opting out stays available as an explicit
+    release-skip label.
+    """
     d = decide_bump([])
-    assert d.release is False
-    assert d.label == "release-skip"
+    assert d.release is True
+    assert d.label == "release-auto"
+    assert d.flag == ""  # let semantic-release decide the bump
     assert d.multiple is False
 
 
 def test_unknown_labels_are_ignored():
     d = decide_bump(["bug", "documentation"])
-    assert d.label == "release-skip"
-    assert d.release is False
+    assert d.label == "release-auto"
+    assert d.release is True
 
 
 def test_auto_releases_with_no_forced_flag():
@@ -94,11 +103,27 @@ def test_supersession_does_not_care_which_order_the_labels_are_in():
     assert (d.label, d.superseded_default, d.release) == ("release-patch", "release-auto", True)
 
 
-def test_the_builtin_skip_default_is_superseded_too():
-    d = decide_bump(["release-skip", "release-minor"])
+def test_the_builtin_default_is_superseded_too():
+    """Supersession follows the built-in, not a hardcoded `release-skip`."""
+    d = decide_bump(["release-auto", "release-minor"])
     assert d.label == "release-minor"
-    assert d.superseded_default == "release-skip"
+    assert d.superseded_default == "release-auto"
     assert d.release is True
+
+
+def test_skip_beside_an_explicit_label_is_now_a_contradiction():
+    """`release-skip` is a human choice once it is no longer the built-in.
+
+    Under the old skip default, skip+minor was "deputy's stand-in, then the
+    label the author wanted", and minor won. With the built-in at release-auto,
+    nothing applies release-skip except a person -- so skip+minor is two
+    explicit labels asking for opposite things, and deputy refuses rather than
+    picking one.
+    """
+    d = decide_bump(["release-skip", "release-minor"])
+    assert d.multiple is True
+    assert d.release is False
+    assert d.reason == "multiple release-* labels"
 
 
 def test_an_explicit_skip_supersedes_a_releasing_default():

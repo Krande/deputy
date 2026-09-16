@@ -6,7 +6,7 @@ deputy and call `deputy <command>`; the logic runs and is tested **locally**
 instead of by pushing commits and reading Actions logs.
 
 ```sh
-pip install "deputy @ git+https://github.com/Krande/deputy.git@v0.3.0"
+pip install "deputy @ git+https://github.com/Krande/deputy.git@v0.7.0"
 ```
 
 ### Install it as a global CLI
@@ -16,7 +16,7 @@ a [pixi-build](https://pixi.sh/latest/build/) manifest, so one command builds an
 installs it (its runtime deps come from conda-forge):
 
 ```sh
-pixi global install deputy --git https://github.com/Krande/deputy.git --tag v0.3.0
+pixi global install deputy --git https://github.com/Krande/deputy.git --tag v0.7.0
 ```
 
 pixi builds deputy from source under its cache dir during that install. If you'd
@@ -33,7 +33,7 @@ Prefer a prebuilt install with no from-source build? Install it as a
 
 ```sh
 pixi global install uv
-uv tool install "deputy @ git+https://github.com/Krande/deputy.git@v0.3.0"
+uv tool install "deputy @ git+https://github.com/Krande/deputy.git@v0.7.0"
 uv tool update-shell          # one-time: add uv's tool dir to PATH, then reopen the shell
 ```
 
@@ -219,7 +219,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install "deputy @ git+https://github.com/Krande/deputy.git@v0.3.0"
+      - run: pip install "deputy @ git+https://github.com/Krande/deputy.git@v0.7.0"
       - run: deputy release-watch --all
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -259,8 +259,8 @@ labels        = ["dependencies"]            # labels applied to the PR
 
 [pr_review]
 marker        = "<!-- MY_PR_BOT -->"        # keep an existing sticky-comment thread
-default_label = "release-auto"              # label applied when a PR carries no release-*
-                                            # (default: "release-skip")
+default_label = "release-skip"              # label applied when a PR carries no release-*
+                                            # (default: "release-auto")
 
 [release]                                   # semantic-release overrides (see below)
 version_toml = ["pyproject.toml:project.version"]
@@ -272,7 +272,7 @@ version_json = ["src/frontend/package-lock.json"]  # npm-aware bump; deputy's ow
 | Field | Required | Default | Meaning |
 |---|---|---|---|
 | `marker` | no | `<!-- DEPUTY_PR_BOT -->` | Sticky-comment marker; set it to a previous bot's marker to keep an existing thread. |
-| `default_label` | no | `release-skip` | The `release-*` label `pr-review` applies when a PR carries none. Set it to `release-auto` to make releasing the default and `release-skip` the opt-out. One of `release-skip` / `release-auto` / `release-patch` / `release-minor` / `release-major` — anything else is a hard error rather than a silent fallback. |
+| `default_label` | no | `release-auto` | The `release-*` label `pr-review` applies when a PR carries none. The built-in default releases at whatever the commit history implies; set it to `release-skip` to make releasing opt-in instead. One of `release-skip` / `release-auto` / `release-patch` / `release-minor` / `release-major` — anything else is a hard error rather than a silent fallback. |
 
 `default_label` is honoured by **both** flows: `pr-review` applies it to the PR,
 and `tag-on-merge` falls back to it when the PR carries no `release-*` label (so
@@ -419,9 +419,10 @@ carrying exactly one `release-*` label (`release-patch` / `release-minor` /
 and `src/deputy/__init__.py`), tags `vX.Y.Z`, and publishes a GitHub Release.
 A `release-skip` PR merges without cutting a tag.
 
-A PR with no `release-*` label gets the repo's default — `release-skip` unless
-`[pr_review].default_label` says otherwise. deputy's own `deputy.toml` keeps
-`release-skip`, so releasing here stays opt-in. Add the label you actually want
+A PR with no `release-*` label gets the repo's default — `release-auto` unless
+`[pr_review].default_label` says otherwise. deputy's own `deputy.toml` keeps the
+built-in, so forgetting the label releases at the level the commit history
+implies rather than silently releasing nothing. Add the label you actually want
 and deputy removes the default it applied, so the PR never ends up with the two
 labels that would quietly suppress the release.
 

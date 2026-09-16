@@ -59,7 +59,7 @@ def pr_review(
 
     ``default_label`` is the release-* label applied when the PR carries none —
     the repo's configured default (``[pr_review].default_label``), falling back
-    to ``release-skip``. Because it is only a stand-in, deputy also *removes* it
+    to ``release-auto``. Because it is only a stand-in, deputy also *removes* it
     again once an explicit release-* label appears alongside it: two release-*
     labels mean no release is cut at all, so leaving its own default behind is
     how deputy would quietly suppress the release it exists to arrange. Two

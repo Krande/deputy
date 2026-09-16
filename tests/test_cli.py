@@ -164,11 +164,11 @@ def test_tag_on_merge_passes_the_configured_default_label(monkeypatch, pr_cfg_fi
     assert calls[0]["default_label"] == "release-auto"
 
 
-def test_tag_on_merge_unconfigured_defaults_to_skip(monkeypatch, tmp_path):
+def test_tag_on_merge_unconfigured_defaults_to_auto(monkeypatch, tmp_path):
     monkeypatch.delenv("DEPUTY_DEFAULT_LABEL", raising=False)
     monkeypatch.setenv("DEPUTY_CONFIG", "semantic-release.toml")
     monkeypatch.setattr(cli, "read_event", lambda: {"pull_request": {}})
     calls = []
     monkeypatch.setattr(cli, "tag_on_merge", lambda *a, **kw: calls.append(kw) or 0)
     assert cli.main(["tag-on-merge", "--config", str(tmp_path / "none.toml")]) == 0
-    assert calls[0]["default_label"] == "release-skip"
+    assert calls[0]["default_label"] == "release-auto"

@@ -158,10 +158,21 @@ def _with_default_label(value: str) -> str:
     return TOML.replace("[pr_review]\n", f'[pr_review]\ndefault_label = "{value}"\n')
 
 
-def test_default_label_falls_back_to_release_skip_when_unconfigured(monkeypatch):
+def test_default_label_falls_back_to_release_auto_when_unconfigured(monkeypatch):
     monkeypatch.delenv("DEPUTY_DEFAULT_LABEL", raising=False)
-    assert resolve_default_label({}) == "release-skip"
-    assert resolve_default_label({"pr_review": {"marker": "<!-- X -->"}}) == "release-skip"
+    assert resolve_default_label({}) == "release-auto"
+    assert resolve_default_label({"pr_review": {"marker": "<!-- X -->"}}) == "release-auto"
+
+
+def test_a_repo_can_still_opt_releasing_back_out(tmp_path, monkeypatch):
+    """`release-skip` stays reachable as a configured default.
+
+    Flipping the built-in must not remove the opt-in-releases setup, only stop
+    it from being what a repo gets by saying nothing.
+    """
+    monkeypatch.delenv("DEPUTY_DEFAULT_LABEL", raising=False)
+    cfg = load_config(_write(tmp_path, _with_default_label("release-skip")))
+    assert resolve_default_label(cfg) == "release-skip"
 
 
 def test_default_label_read_from_pr_review_table(tmp_path, monkeypatch):
