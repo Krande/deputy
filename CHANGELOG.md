@@ -2,6 +2,13 @@
 
 
 
+## v0.8.1 (2026-09-16)
+
+### Fix
+
+* fix(pr-review): report a release-auto PR with nothing releasable as a skip (#20) ([`a6f805a`](https://github.com/Krande/deputy/commit/a6f805abc5c6afd737a915a4b634a28c0bbfc439))
+
+
 ## v0.8.0 (2026-09-16)
 
 ### Feature
