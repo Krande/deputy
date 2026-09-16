@@ -59,9 +59,27 @@ def test_version_line_reports_calculated_version():
     assert "0.2.0" in line and "Calculated next version" in line
 
 
-def test_version_line_no_release_when_version_missing():
+def test_version_line_says_could_not_determine_when_there_is_no_answer():
+    """Empty stdout means semantic-release told us nothing, not that nothing is due."""
     line = version_line_for(decide_bump(["release-auto"]), "cfg", lambda c: cp(""))
-    assert "No release will be issued" in line
+    assert "Could not determine the next version" in line
+
+
+def test_version_line_reports_a_chore_only_auto_pr_as_a_skip():
+    """The confusing case: `release-auto` with nothing releasable in the commits.
+
+    `version --print` writes the ALREADY-RELEASED version to stdout and says so
+    only on stderr, so reading stdout alone reported the current version as the
+    "calculated next version" — which reads like a release is coming when the
+    merge will cut nothing.
+    """
+    line = version_line_for(decide_bump(["release-auto"]), "cfg", lambda c: cp(**NO_RELEASE))
+    assert "Skipping release (no releasable commits)" in line
+    assert "0.38.0" not in line, "the already-released version must not be presented as next"
+
+
+def test_next_version_noop_honours_the_no_release_marker():
+    assert next_version_noop("cfg", None, lambda c: cp(**NO_RELEASE)) is None
 
 
 def test_isolated_env_strips_the_actions_output_handshake(monkeypatch):
