@@ -57,8 +57,11 @@ inputs:
       Whether the repo has a SOURCE_KEY deploy key, as `true`/`false`. pr-review
       reports the tagging path as unavailable without one rather than failing,
       so it is worth passing even though it is optional. Pass
-      `${{ secrets.SOURCE_KEY != '' }}` -- a secret cannot be read in an `if:`,
-      but comparing it to empty is allowed.
+      an expression comparing the secret to empty -- a secret cannot be read in
+      an `if:`, but `secrets.SOURCE_KEY != ''` is allowed. See the README for
+      the literal form; it cannot be written here, because the runner evaluates
+      expression syntax inside descriptions too and rejects `secrets` in an
+      action manifest.
     required: false
     default: ""
   python-version:
