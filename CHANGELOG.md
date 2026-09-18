@@ -2,6 +2,19 @@
 
 
 
+## v0.9.0 (2026-09-18)
+
+### Chore
+
+* chore(docs): pin the README install examples to v0.8.1 (#19) ([`63c6c4b`](https://github.com/Krande/deputy/commit/63c6c4bf0c1d64e6952cc6a40c6e111f4e318df4))
+
+### Feature
+
+* feat(action): run deputy from a composite action, so the ref is the pin (#21)
+
+Co-authored-by: Claude Opus 5 (1M context) &lt;noreply@anthropic.com&gt; ([`d159dcc`](https://github.com/Krande/deputy/commit/d159dccb2a9cd592dcd1ec9b20437d29b4dc39ff))
+
+
 ## v0.8.1 (2026-09-16)
 
 ### Fix
