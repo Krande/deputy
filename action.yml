@@ -1,0 +1,114 @@
+name: deputy
+description: Run a deputy command (pr-review, tag-on-merge, gitops-update, release-watch, sshkey).
+
+# WHY THIS EXISTS. Every consumer repeated the same three steps to deliver one
+# command -- setup-python, `pip install "deputy @ git+...@vX.Y.Z"`, then
+# `deputy <cmd>` -- and the version lived inside a `run:` string. Two
+# consequences, both of which have already cost time:
+#
+#   * NOTHING KEEPS TWO PINS IN STEP. adacpp bumped pr-review.yaml to v0.8.1
+#     and left tag-on-pr-merge.yaml on v0.5.5, so one commit installed two
+#     different deputies. A version buried in a shell string is invisible to
+#     every tool that would otherwise notice -- Dependabot's github-actions
+#     ecosystem reads `uses:`, not `run:`.
+#   * A COMMENT DRIFTS FROM THE PIN. The same file's header said v0.5.5 while
+#     the `run:` below it installed v0.8.1.
+#
+# With `uses: Krande/deputy@v0.8.1`, THE REF IS THE PIN. There is one version
+# per call site, it is in the field tooling already understands, and the
+# `git+https://` string disappears.
+#
+# NO PACKAGE INDEX IS INVOLVED. `pip install ${{ github.action_path }}` installs
+# from the checkout `uses:` already made, so this needs neither PyPI nor
+# conda-forge -- which is just as well, since the name `deputy` on PyPI belongs
+# to an unrelated project. It is also one less network round-trip than the clone
+# it replaces.
+#
+# COMPOSITE, NOT DOCKER, and deliberately: a container action runs as root
+# against a workspace owned by another uid, so git refuses with `dubious
+# ownership` -- and deputy runs git (`commit --allow-empty`, plus
+# semantic-release). tag-on-merge's SSH deploy-key push also depends on
+# `core.sshCommand` pointing into RUNNER_TEMP, which path-translates awkwardly
+# inside a container. A composite action shares the runner's filesystem and
+# sidesteps both.
+
+inputs:
+  command:
+    description: >-
+      The deputy subcommand to run: pr-review, tag-on-merge, gitops-update,
+      release-watch or sshkey.
+    required: true
+  args:
+    description: >-
+      Extra flags, appended verbatim. Only gitops-update and release-watch take
+      any; pr-review and tag-on-merge need none.
+    required: false
+    default: ""
+  github-token:
+    description: >-
+      Token for the GitHub API. Set as BOTH GITHUB_TOKEN and GH_TOKEN, because
+      the commands disagree about which they read -- pr-review takes
+      GITHUB_TOKEN, tag-on-merge takes GH_TOKEN -- and a caller should not have
+      to know that.
+    required: false
+    default: ""
+  has-source-key:
+    description: >-
+      Whether the repo has a SOURCE_KEY deploy key, as `true`/`false`. pr-review
+      reports the tagging path as unavailable without one rather than failing,
+      so it is worth passing even though it is optional. Pass
+      an expression comparing the secret to empty -- a secret cannot be read in
+      an `if:`, but `secrets.SOURCE_KEY != ''` is allowed. See the README for
+      the literal form; it cannot be written here, because the runner evaluates
+      expression syntax inside descriptions too and rejects `secrets` in an
+      action manifest.
+    required: false
+    default: ""
+  python-version:
+    description: The Python used to run deputy. 3.12 is what the workflows used.
+    required: false
+    default: "3.12"
+  config:
+    description: Path to deputy.toml, if it is not at the repo root (DEPUTY_TOML).
+    required: false
+    default: ""
+  marker:
+    description: Sticky-comment marker override (DEPUTY_MARKER).
+    required: false
+    default: ""
+  default-label:
+    description: Release label applied to a PR that arrives without one (DEPUTY_DEFAULT_LABEL).
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python for deputy
+      uses: actions/setup-python@v7
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install deputy
+      shell: bash
+      # From the action's own checkout -- no index, no clone. deputy pins
+      # gitpython<3.1.60 itself from v0.5.2; do not re-add it here.
+      run: pip install "${{ github.action_path }}"
+
+    - name: Run deputy ${{ inputs.command }}
+      shell: bash
+      run: deputy ${{ inputs.command }} ${{ inputs.args }}
+      env:
+        # Passed unconditionally, including when empty, which is safe BECAUSE of
+        # how deputy reads them: the three DEPUTY_* vars are
+        # `os.environ.get(X) or <default>`, so "" falls through to the default,
+        # and HAS_SOURCE_KEY is compared `== "true"`, so "" is simply false.
+        # A composite action cannot omit an env key conditionally, so this
+        # depends on that and would need revisiting if any of them switched to
+        # a presence check.
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        HAS_SOURCE_KEY: ${{ inputs.has-source-key }}
+        DEPUTY_TOML: ${{ inputs.config }}
+        DEPUTY_MARKER: ${{ inputs.marker }}
+        DEPUTY_DEFAULT_LABEL: ${{ inputs.default-label }}

@@ -9,6 +9,52 @@ instead of by pushing commits and reading Actions logs.
 pip install "deputy @ git+https://github.com/Krande/deputy.git@v0.8.1"
 ```
 
+### Use it as a GitHub Action
+
+In a workflow, prefer the action over the three steps it replaces — the ref
+**is** the pin:
+
+```yaml
+- uses: Krande/deputy@v0.8.1
+  with:
+    command: pr-review
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    has-source-key: ${{ secrets.SOURCE_KEY != '' }}
+```
+
+```yaml
+- uses: Krande/deputy@v0.8.1
+  with:
+    command: tag-on-merge
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+Flag-taking commands pass them through `args`:
+
+```yaml
+- uses: Krande/deputy@v0.8.1
+  with:
+    command: release-watch
+    args: --all
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+Why this and not `pip install` in a `run:` step:
+
+* **One version per call site, where tooling can see it.** A version inside a
+  `run:` string is invisible to Dependabot's `github-actions` ecosystem, which
+  reads `uses:`. It is also easy to bump in one workflow and miss another —
+  adacpp ran two different deputies from one commit that way.
+* **No package index.** The action installs from its own checkout, so this
+  needs neither PyPI nor conda-forge.
+* `github-token` is set as **both** `GITHUB_TOKEN` and `GH_TOKEN`, because
+  `pr-review` reads the first and `tag-on-merge` the second; callers should not
+  have to know that.
+
+The action does not check out your repository — add `actions/checkout` before
+it, with whatever `ref`/`fetch-depth` the command needs (`tag-on-merge` needs
+full history and the SSH deploy key).
+
 ### Install it as a global CLI
 
 To call `deputy` from any directory, install it globally with pixi — deputy ships
