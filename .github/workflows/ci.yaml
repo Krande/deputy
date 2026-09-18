@@ -33,3 +33,24 @@ jobs:
 
       - name: Test
         run: pytest -q
+
+  # The composite action, exercised on a real runner rather than only
+  # schema-checked. `uses: ./` resolves it from this checkout, so every PR that
+  # touches action.yml proves the three things it actually does: setup-python
+  # runs, `pip install <action_path>` resolves the package from the checkout
+  # with no index, and the `deputy` entry point it creates is on PATH.
+  #
+  # `--help` because it is the one invocation that needs no token, no event
+  # payload and no repository state, and still fails if any of the above is
+  # broken. Asserting more here would mean reconstructing an Actions event,
+  # which is exactly what the unit tests do instead.
+  action:
+    name: Composite action smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run deputy through the action
+        uses: ./
+        with:
+          command: --help
