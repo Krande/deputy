@@ -456,6 +456,58 @@ Note `version_variables` still works for `package.json` on its own — its own
 `version = "…"` and never JSON, where the key carries a closing quote before the
 colon.
 
+### Several packages in one repo
+
+A repo that ships more than one thing — an app and its plugins, a library and a
+tool built on it — can give each its own version, tag, changelog and GitHub
+Release, so a change to one does not bump the others. Declare them as
+`[[release.packages]]`:
+
+```toml
+[release]
+# shared semantic-release keys apply to every package
+commit_parser_options = { minor_tags = ["feat"], patch_tags = ["fix", "perf"] }
+
+[[release.packages]]
+name = "app"
+path = "app"                                       # files under here belong to it
+version_toml = ["app/pyproject.toml:project.version"]
+
+[[release.packages]]
+name = "plugin"
+path = "plugins/plugin"
+version_toml = ["plugins/plugin/pyproject.toml:project.version"]
+# optional: tag_format (default "<name>-v{version}"), changelog_file (default
+# "<path>/CHANGELOG.md"), commit_message, build_command, assets,
+# version_variables, version_json
+```
+
+On a merged PR, deputy releases the packages whose `path` the merge commit
+touched (`git diff <merge>^1 <merge>`), one semantic-release run each: the
+package's own version files, commit (`<name> <version>`), tag (`app-v1.3.0`) and
+Release. Packages the PR did not touch keep their version. `pr-review` lists the
+next version per touched package in its comment.
+
+Two things differ from a single-package repo, both because semantic-release 8
+has no notion of paths — reading the commits since a package's last tag would
+also count every other package's commits in that range:
+
+* **Under `release-auto` the bump comes from the PR title**: `fix:`/`perf:` patch,
+  `feat:` minor, `!` or `BREAKING CHANGE` major (per `commit_parser_options`);
+  other types release nothing. An explicit `release-patch`/`-minor`/`-major`
+  label applies to every touched package; `release-skip` releases none.
+* **deputy writes the changelog entry and the Release**: one entry per release
+  (the PR title and link) in the package's changelog, staged so it lands in the
+  version commit, and a GitHub Release for the tag with the same text.
+  semantic-release runs with `--no-changelog --no-vcs-release`.
+
+Version locations are not inherited from `[release]` (a root `pyproject.toml` is
+not every package's version file), so each package names its own. A package
+with no tag of its own yet starts from semantic-release's default; to continue an
+existing version, tag the current commit (`git tag app-v1.2.0`) before the first
+release. Several touched packages are released one after another, and the first
+failure stops the rest. Without `[[release.packages]]` nothing changes.
+
 ## Releasing
 
 deputy dogfoods its own CI: `pr-review.yaml` and `tag-on-pr-merge.yaml` install

@@ -18,6 +18,7 @@ from .github import GitHubClient, upsert_sticky_comment
 from .gitops import container_images, set_container_images, set_image
 from .gitutils import commit_and_push, commit_to_branch, seed_title_commit
 from .labels import DEFAULT_LABEL, LABEL_PALETTE, SILENCE_LABEL, BumpDecision, decide_bump
+from .packages import Package, changed_files, package_flag, touched_packages
 from .pr_checks import PrChecks, title_ok
 from .release_watch import (
     DEFAULT_BRANCH_PREFIX,
@@ -39,7 +40,7 @@ from .release_watch import (
     target_files,
 )
 from .sshkey import key_basename, keygen_argv, resolve_email, unique_path
-from .version import run_release, version_line_for
+from .version import package_version_lines, run_package_release, run_release, version_line_for
 
 
 def pr_review(
@@ -54,8 +55,13 @@ def pr_review(
     version_line_fn: Callable[[BumpDecision], str] | None = None,
     seed_fn: Callable[[str], None] | None = None,
     set_output_fn: Callable[[str, str], None] | None = None,
+    packages: Sequence[Package] = (),
+    package_lines_fn: Callable[[BumpDecision, str, Sequence[Package]], str] | None = None,
 ) -> int:
     """Run the PR-review checks, post/refresh the sticky comment, set review_ok.
+
+    With ``packages`` (``[[release.packages]]``) the version bullet becomes one line
+    per package the PR's files touch, each with the version and tag it would get.
 
     ``default_label`` is the release-* label applied when the PR carries none —
     the repo's configured default (``[pr_review].default_label``), falling back
@@ -124,7 +130,11 @@ def pr_review(
     )
 
     seed_fn(pr.title)
-    version_line = version_line_fn(decision)
+    if packages:
+        touched = touched_packages(packages, client.list_pr_files(pr.number))
+        version_line = (package_lines_fn or package_version_lines)(decision, pr.title, touched)
+    else:
+        version_line = version_line_fn(decision)
     note = (
         f"Removed the default `{superseded}` label — `{decision.label}` supersedes it."
         if superseded is not None
@@ -146,8 +156,18 @@ def tag_on_merge(
     default_label: str = DEFAULT_LABEL,
     version_json: Sequence[str] = (),
     release_fn: Callable[[str | None], int] | None = None,
+    packages: Sequence[Package] = (),
+    client: GitHubClient | None = None,
+    changed_files_fn: Callable[[str | None], list[str]] | None = None,
+    package_release_fn: Callable[[Package, str, object], int] | None = None,
 ) -> int:
     """On a merged PR, run semantic-release to tag/release per the release label.
+
+    With ``packages`` (``[[release.packages]]``, see :mod:`deputy.packages`) each
+    package the merge commit touched is released on its own, at the label's level
+    or -- under ``release-auto`` -- the level the PR title asks for. ``client``
+    creates their GitHub Releases. Packages are released one after another and the
+    first failure stops the rest.
 
     A PR with no release-* label (pr-review never ran, or the label was removed)
     falls back to the same configured ``default_label`` the review flow applies.
@@ -176,6 +196,39 @@ def tag_on_merge(
     decision = decide_bump(pr.labels, default_label)
     if not decision.release:
         print(f"No release ({decision.reason}).")
+        return 0
+
+    if packages:
+        if package_release_fn is None:
+            if client is None:
+                raise ValueError(
+                    "tag_on_merge with packages needs a GitHub client for the Releases"
+                )
+            release_client = client
+
+            def package_release_fn(package, flag, pr):
+                return run_package_release(
+                    package,
+                    flag,
+                    title=pr.title,
+                    number=pr.number,
+                    url=pr.html_url or None,
+                    create_release_fn=release_client.create_release,
+                )
+
+        files = (changed_files_fn or changed_files)(pr.merge_commit_sha or None)
+        touched = touched_packages(packages, files)
+        if not touched:
+            print("No package changed by this PR; nothing to release.")
+            return 0
+        for package in touched:
+            flag = package_flag(decision.flag, pr.title, package)
+            if flag is None:
+                print(f"{package.name}: no release (the title {pr.title!r} asks for none).")
+                continue
+            rc = package_release_fn(package, flag, pr)
+            if rc:
+                return rc
         return 0
 
     print(f"Releasing (label={decision.label}, flag={decision.flag or 'auto'}) …")

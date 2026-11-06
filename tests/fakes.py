@@ -23,6 +23,9 @@ class FakeGitHubClient:
         self.tags: dict[str, list[str]] = {}
         self.pulls: list[PullRequest] = []
         self._next_pr = 100
+        # [[release.packages]]: files per PR, and the Releases deputy created.
+        self.pr_files: dict[int, list[str]] = {}
+        self.created_releases: list[tuple[str, str, str]] = []
 
     def list_comments(self, issue: int) -> list[Comment]:
         return list(self.comments)
@@ -89,6 +92,13 @@ class FakeGitHubClient:
                 return
         raise KeyError(number)
 
+    # ── [[release.packages]] surface ─────────────────────────────────────────
+    def list_pr_files(self, number: int) -> list[str]:
+        return list(self.pr_files.get(number, []))
+
+    def create_release(self, tag: str, name: str, body: str) -> None:
+        self.created_releases.append((tag, name, body))
+
 
 def pr_event(
     *,
@@ -97,6 +107,7 @@ def pr_event(
     merged: bool = False,
     number: int = 7,
     base_ref: str = "main",
+    merge_commit_sha: str = "",
 ) -> dict:
     """Build a minimal `pull_request` event payload."""
     return {
@@ -106,6 +117,8 @@ def pr_event(
             "merged": merged,
             "labels": [{"name": name} for name in (labels or [])],
             "base": {"ref": base_ref},
+            "merge_commit_sha": merge_commit_sha,
+            "html_url": f"https://github.com/o/r/pull/{number}",
         }
     }
 

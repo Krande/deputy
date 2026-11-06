@@ -60,7 +60,7 @@ RELEASE_DEFAULTS: dict[str, Any] = {
 # semantic-release itself knows nothing about. deputy applies them and strips
 # them from the config it renders, so the generated file stays an honest
 # semantic-release config rather than relying on it to ignore extra keys.
-DEPUTY_RELEASE_KEYS = ("version_json",)
+DEPUTY_RELEASE_KEYS = ("version_json", "packages")
 
 
 def deep_merge(base: dict, over: dict) -> dict:

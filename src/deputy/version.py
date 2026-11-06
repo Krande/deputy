@@ -13,15 +13,19 @@ dangling as uncommitted changes.
 
 from __future__ import annotations
 
+import datetime as _dt
 import os
 import re
 import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
+from .config import write_release_config
 from .gitutils import stage_paths
 from .jsonversion import JsonVersionUpdate, bump_file
 from .labels import BumpDecision
+from .packages import Package, add_changelog_entry, changelog_entry, package_flag
 
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess]
 
@@ -261,3 +265,95 @@ def run_release(
         cmd.append(flag)
     res = runner(cmd)
     return getattr(res, "returncode", 0)
+
+
+# ── several packages in one repo ([[release.packages]], see deputy.packages) ──
+
+ReleaseFn = Callable[[str, str, str], None]  # (tag, name, body) -> create a GitHub Release
+
+
+def package_version_lines(
+    decision: BumpDecision,
+    title: str,
+    touched: Sequence[Package],
+    *,
+    write_config_fn: Callable[[dict], str] = write_release_config,
+    runner: Runner = _default_noop_runner,
+) -> str:
+    """The '* … next version …' bullets for the PR comment, one per touched package."""
+    if decision.multiple or not decision.release:
+        return " * ✅ Skipping release (release-skip)"
+    if not touched:
+        return " * ✅ Skipping release (no package changed)"
+    lines = []
+    for package in touched:
+        flag = package_flag(decision.flag, title, package)
+        if flag is None:
+            lines.append(
+                f" * ✅ {package.name}: skipping release (nothing releasable in the title)"
+            )
+            continue
+        report = noop_version(write_config_fn(package.overrides), flag, runner)
+        if report.version:
+            lines.append(
+                f' * ✅ {package.name}: next version "{report.version}" ({package.tag(report.version)})'
+            )
+        else:
+            lines.append(f" * ℹ️ {package.name}: could not determine the next version")
+    return "\n".join(lines)
+
+
+def run_package_release(
+    package: Package,
+    flag: str,
+    *,
+    title: str,
+    number: int,
+    url: str | None,
+    create_release_fn: ReleaseFn,
+    write_config_fn: Callable[[dict], str] = write_release_config,
+    planned_fn: Callable[[str, str | None], str | None] = planned_version,
+    prepare_fn: Callable[[Sequence[str], str, str | None], str | None] = prepare_json_versions,
+    stage_fn: StageFn = stage_paths,
+    runner: Runner = _default_release_runner,
+    today: _dt.date | None = None,
+) -> int:
+    """Release one ``[[release.packages]]`` package for a merged PR (see :mod:`deputy.packages`).
+
+    The version is asked for first (``version --print`` with the same config and
+    flag the real run gets), so the changelog entry can name it and be staged into
+    the version commit -- semantic-release commits whatever the index holds, the
+    same trick ``version_json`` relies on. semantic-release then bumps the
+    package's version files, commits, tags and pushes, without its own changelog
+    and release notes (they would list other packages' commits too); deputy
+    creates the Release for the tag with the PR as its notes.
+
+    Returns the semantic-release return code (0 when the package has nothing to release).
+    """
+    config_file = write_config_fn(package.overrides)
+    version = planned_fn(config_file, flag)
+    if version is None:
+        print(f"{package.name}: nothing to release.")
+        return 0
+    tag = package.tag(version)
+    if package.version_json:
+        prepare_fn(list(package.version_json), config_file, flag)
+    entry = changelog_entry(tag, title, number, url, today or _dt.date.today())
+    add_changelog_entry(Path(package.changelog_file), entry)
+    stage_fn([package.changelog_file])
+    print(f"{package.name}: releasing {tag} ({flag}) ...")
+    res = runner(
+        [
+            "semantic-release",
+            "-c",
+            config_file,
+            "version",
+            "--no-changelog",
+            "--no-vcs-release",
+            flag,
+        ]
+    )
+    rc = getattr(res, "returncode", 0)
+    if rc == 0:
+        create_release_fn(tag, tag, entry.split("\n", 2)[2].strip())
+    return rc

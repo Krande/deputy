@@ -68,6 +68,9 @@ class GitHubClient(Protocol):
         self, *, head: str, base: str, title: str, body: str
     ) -> PullRequest: ...
     def update_pull_request(self, number: int, *, title: str, body: str) -> None: ...
+    # [[release.packages]]: which files a PR touches, and a Release per package tag.
+    def list_pr_files(self, number: int) -> list[str]: ...
+    def create_release(self, tag: str, name: str, body: str) -> None: ...
 
 
 class RestGitHubClient:
@@ -171,6 +174,24 @@ class RestGitHubClient:
             # never raises, so the 404 tolerance documented above never applied.
             if exc.status != 404:
                 raise
+
+    def list_pr_files(self, number: int) -> list[str]:
+        """Paths of the files a PR changes (paginated; GitHub caps the list at 3000)."""
+        files: list[str] = []
+        page = 1
+        while True:
+            batch = self._request("GET", f"/pulls/{number}/files?per_page=100&page={page}")
+            if not batch:
+                break
+            files.extend(f["filename"] for f in batch)
+            if len(batch) < 100:
+                break
+            page += 1
+        return files
+
+    def create_release(self, tag: str, name: str, body: str) -> None:
+        """Publish a GitHub Release for an existing ``tag``."""
+        self._request("POST", "/releases", {"tag_name": tag, "name": name, "body": body})
 
     def latest_release(self, repo: str) -> Release | None:
         """Latest published GitHub Release of ``repo`` (owner/name), or None."""
