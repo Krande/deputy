@@ -18,6 +18,10 @@ class PullRequestEvent:
     labels: list[str]
     merged: bool
     base_ref: str
+    # Used by [[release.packages]]: which packages the merge touched, and the PR's
+    # link for the changelog entry. Empty when the payload lacks them.
+    merge_commit_sha: str = ""
+    html_url: str = ""
 
 
 def read_event(path: str | None = None) -> dict:
@@ -38,6 +42,8 @@ def parse_pull_request(event: dict) -> PullRequestEvent:
         labels=[label["name"] for label in pr.get("labels", []) if "name" in label],
         merged=bool(pr.get("merged", False)),
         base_ref=base.get("ref", "") or "",
+        merge_commit_sha=pr.get("merge_commit_sha", "") or "",
+        html_url=pr.get("html_url", "") or "",
     )
 
 

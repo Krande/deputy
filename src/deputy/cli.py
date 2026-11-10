@@ -61,6 +61,7 @@ from .config import (
 )
 from .flows import create_sshkey, gitops_update, pr_review, release_watch, tag_on_merge
 from .github import RestGitHubClient
+from .packages import release_packages
 from .sshkey import DEFAULT_KEY_DIR, STATE_PATH, load_stored_email, save_stored_email
 
 
@@ -88,16 +89,24 @@ def cmd_pr_review(args: argparse.Namespace) -> int:
         marker=_marker(cfg),
         config_file=_release_config_path(cfg),
         default_label=resolve_default_label(cfg),
+        packages=release_packages(cfg),
     )
 
 
 def cmd_tag_on_merge(args: argparse.Namespace) -> int:
     cfg = load_config(args.config)
+    packages = release_packages(cfg)
+    client = None
+    if packages:  # deputy creates the per-package GitHub Releases itself
+        token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN", "")
+        client = RestGitHubClient(token, os.environ["GITHUB_REPOSITORY"])
     return tag_on_merge(
         read_event(),
         config_file=_release_config_path(cfg),
         default_label=resolve_default_label(cfg),
         version_json=version_json_paths(cfg),
+        packages=packages,
+        client=client,
     )
 
 
