@@ -2,6 +2,13 @@
 
 
 
+## v0.10.0 (2026-11-10)
+
+### Feature
+
+* feat(release): release several packages from one repo ([[release.packages]]) (#22) ([`e8933e8`](https://github.com/Krande/deputy/commit/e8933e8f6657dd5edb4f16a8dfac276ed62052de))
+
+
 ## v0.9.0 (2026-09-18)
 
 ### Chore
